@@ -37,4 +37,7 @@ pub enum PocketBridgeError {
 
     #[error("Adapter error: {0}")]
     AdapterError(String),
+
+    #[error("Co-processor error: {0}")]
+    CoProcessorError(String),
 }

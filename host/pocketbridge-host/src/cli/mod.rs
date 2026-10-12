@@ -40,6 +40,12 @@ pub enum Commands {
         /// Execute only on the remote phone worker
         #[arg(long, default_value_t = false)]
         remote_only: bool,
+        /// Execute concurrently across both Host and Phone (Hybrid Co-Processing)
+        #[arg(long, default_value_t = false)]
+        hybrid: bool,
+        /// Host workload ratio for hybrid co-processing (e.g. 0.5 = 50% host, 50% phone)
+        #[arg(long, default_value_t = 0.5)]
+        host_ratio: f64,
         /// Simulated host load capacity factor (1.0 = idle host, 0.2 = heavy host load)
         #[arg(long, default_value_t = 1.0)]
         host_load: f64,
@@ -104,6 +110,8 @@ pub async fn handle_command(cmd: Commands) -> Result<()> {
             height,
             local_only,
             remote_only,
+            hybrid,
+            host_ratio,
             host_load,
             margin,
             port,
@@ -118,6 +126,8 @@ pub async fn handle_command(cmd: Commands) -> Result<()> {
                 height,
                 local_only,
                 remote_only,
+                hybrid,
+                host_ratio,
                 host_load,
                 margin,
                 port,

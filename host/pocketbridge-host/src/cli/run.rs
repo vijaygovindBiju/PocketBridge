@@ -4,6 +4,7 @@ use pocketbridge_core::{
     AdbTransport, AgentRole, ChunkTransformParams, CostModel, DataAnalyticsParams,
     DeviceProfile, Envelope, HeartbeatPayload, HelloPayload, ImageBatchParams,
     MessageKind, RemoteJobClient, Scheduler, SchedulerConfig, AdapterRegistry,
+    CoProcessor,
 };
 
 pub async fn execute(
@@ -16,6 +17,8 @@ pub async fn execute(
     height: u32,
     local_only: bool,
     remote_only: bool,
+    hybrid: bool,
+    host_ratio: f64,
     host_load: f64,
     margin: f64,
     port: u16,
@@ -169,6 +172,67 @@ pub async fn execute(
     );
 
     println!("\n{}", Scheduler::format_decision_card(&decision));
+
+    if hybrid {
+        println!("\n>> Preparing Hybrid Co-Processing (Host + Phone in parallel)...");
+        let transport = AdbTransport::new(port);
+        let device = transport.check_device().await
+            .context("ADB device check failed. Is phone connected via USB debugging?")?;
+        println!("   Target device: {device}");
+
+        transport.setup_forwarding().await
+            .context("Failed to setup ADB port forwarding")?;
+
+        println!("   Connecting to worker at 127.0.0.1:{port}...");
+        let mut stream = transport.connect_tcp().await
+            .context("Failed to connect to worker service")?;
+
+        let hello = Envelope::hello("pocketbridge-hybrid", "0.1.0", AgentRole::Host);
+        write_envelope(&mut stream, &hello).await?;
+        let reply = read_envelope(&mut stream).await?;
+        if reply.kind != MessageKind::Hello {
+            anyhow::bail!("Expected HELLO response, got {:?}", reply.kind);
+        }
+        let worker_hello: HelloPayload = serde_json::from_value(reply.payload)?;
+        println!("   Handshook with worker: {} (v{})\n", worker_hello.agent_name, worker_hello.agent_version);
+
+        println!(">> Launching concurrent hybrid execution across Laptop and Phone...");
+        let co_res = CoProcessor::execute_hybrid(
+            &mut stream,
+            adapter_id,
+            &params_json,
+            host_ratio,
+            |fraction, msg| {
+                print!("\r   Progress: [{:>3.0}%] {}", fraction * 100.0, msg);
+                use std::io::Write;
+                let _ = std::io::stdout().flush();
+            },
+        ).await.context("Failed executing hybrid co-processing job")?;
+
+        println!("\n\n==========================================================================");
+        println!("Hybrid Co-Processing Summary (OPT-C)");
+        println!("==========================================================================");
+        println!("Adapter ID:               {}", co_res.adapter_id);
+        println!("Workload Partitioning:    {:.1}% Host / {:.1}% Phone", co_res.host_ratio * 100.0, (1.0 - co_res.host_ratio) * 100.0);
+        println!("Total Records Processed:  {}", co_res.total_records);
+        println!("Host Records Processed:   {}", co_res.host_records);
+        println!("Phone Records Processed:  {}", co_res.worker_records);
+        println!("Host Compute Time:        {:.2} ms", co_res.host_duration_ms);
+        println!("Phone Compute Time:       {:.2} ms", co_res.worker_duration_ms);
+        println!("Concurrent Wall-Clock:    {:.2} ms (both devices computing in parallel)", co_res.wall_clock_duration_ms);
+        println!("Combined Throughput:      {:.0} records/sec", co_res.throughput_records_sec);
+        println!("Combined SHA-256 Digest:  {}", co_res.combined_sha256);
+        println!("Host Slice SHA-256:       {}", co_res.host_sha256);
+        println!("Phone Slice SHA-256:      {}", co_res.worker_sha256);
+        println!("--------------------------------------------------------------------------");
+        if co_res.effective_speedup > 1.0 {
+            println!("Co-Processing Speedup:    {:.2}x FASTER than single-device execution!", co_res.effective_speedup);
+        } else {
+            println!("Co-Processing Speedup:    {:.2}x", co_res.effective_speedup);
+        }
+        println!("==========================================================================");
+        return Ok(());
+    }
 
     // 1. Local Run
     let local_output = if !remote_only {
