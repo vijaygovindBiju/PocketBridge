@@ -125,15 +125,11 @@ impl AdbTransport {
             let stdout = String::from_utf8_lossy(&output.stdout);
             for line in stdout.lines() {
                 // Format: [key]: [value]
-                if let (Some(k_start), Some(k_end), Some(v_start), Some(v_end)) = (
-                    line.find('['),
-                    line.find("]: ["),
-                    line.find("]: [").map(|p| p + 4),
-                    line.rfind(']'),
-                ) {
-                    let key = &line[k_start + 1..k_end];
-                    let val = &line[v_start..v_end];
-                    props.insert(key.to_string(), val.to_string());
+                if let Some((k_part, v_part)) = line.split_once("]: [") {
+                    if let Some(key) = k_part.strip_prefix('[') {
+                        let val = v_part.strip_suffix(']').unwrap_or(v_part);
+                        props.insert(key.to_string(), val.to_string());
+                    }
                 }
             }
         }

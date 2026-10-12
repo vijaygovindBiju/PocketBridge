@@ -146,6 +146,7 @@ pub struct ResultManifestPayload {
     pub output_sha256: String,
     pub compute_duration_ms: u64,
     pub records_processed: u64,
+    #[serde(default)]
     pub metadata: serde_json::Value,
 }
 

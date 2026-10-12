@@ -30,9 +30,9 @@ flowchart LR
 
 | Phase | Target Version | Milestone Name | Status | Key Deliverable | Verified Environment |
 | :---: | :---: | :--- | :---: | :--- | :--- |
-| **0** | `v0.1.0` | **Feasibility & Link Foundation** | `COMPLETED` | USB-C ADB framing, latency ping, 100MB throughput tests, hardware profiler, Ratatui TUI | Arch Linux + Android 14 (Redmi Note 13 Pro 5G) |
-| **1** | `v0.2.0` | **Vertical Slice & Deterministic Workload** | `COMPLETED` | `chunk_transform.v1` compute engine, SHA-256 equivalence validation, speedup measurement | Arch Linux + Android 14 (ARM64) |
-| **2** | `v0.3.0` | **Job Lifecycle & Reliability** | `COMPLETED` | Full protocol envelopes (`SUBMIT`, `ACCEPTED`, `STARTED`, `PROGRESS`, `RESULT`, `CANCEL`), $O(1)$ streaming | MockWorker & Physical Android Worker |
+| **0** | `v0.1.0` | **Feasibility & Link Foundation** | `COMPLETED` | USB-C ADB framing, latency ping, 100MB throughput tests, hardware profiler, Ratatui TUI | Arch Linux + Samsung Galaxy S25 Ultra (Snapdragon 8 Elite, 370 Mbps) |
+| **1** | `v0.2.0` | **Vertical Slice & Deterministic Workload** | `COMPLETED` | `chunk_transform.v1` compute engine, SHA-256 equivalence validation, speedup measurement | Arch Linux + Samsung Galaxy S25 Ultra (Bit-for-bit SHA-256 verified) |
+| **2** | `v0.3.0` | **Job Lifecycle & Reliability** | `COMPLETED` | Full protocol envelopes (`SUBMIT`, `ACCEPTED`, `STARTED`, `PROGRESS`, `RESULT`, `CANCEL`), $O(1)$ streaming | Arch Linux + Samsung Galaxy S25 Ultra (100MB stream verified) |
 | **3** | `v0.4.0` | **Explainable Scheduler & Cost Model** | `IN PROGRESS` | Analytical cost-benefit engine, battery/thermal constraint gates, human-readable offload rationale | Planned Next |
 | **4** | `v0.5.0` | **Production Task Adapters** | `PLANNED` | Image batching, FFmpeg video chunking, offline audio transcription adapters | Target: Sprint 4 |
 | **5** | `v0.6.0` | **Native Android OS & Power Integration** | `PLANNED` | WakeLock manager, thermal throttling listeners, Doze handling, notification telemetry | Target: Sprint 5 |

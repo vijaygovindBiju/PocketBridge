@@ -43,6 +43,18 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Automatically start the worker service on launch if not already running
+        if (!WorkerService.isRunning.value) {
+            val startIntent = Intent(this, WorkerService::class.java).apply {
+                action = WorkerService.ACTION_START
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(startIntent)
+            } else {
+                startService(startIntent)
+            }
+        }
+
         setContent {
             MaterialTheme {
                 Surface(

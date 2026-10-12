@@ -30,27 +30,34 @@ pub async fn run_single_echo(
         env = env.with_priority(p);
     }
 
+    let (mut reader, mut writer) = stream.split();
+
     // 1. Send Envelope
-    write_envelope(stream, &env).await?;
+    write_envelope(&mut writer, &env).await?;
 
-    // 2. Send Raw Data Stream
-    if binary_size > 0 {
-        write_raw_stream(stream, binary_size).await?;
-    }
+    // 2. Concurrently write payload and read reply + echoed stream to prevent TCP buffer deadlocks on large (10MB+) streams
+    let write_task = async {
+        if binary_size > 0 {
+            write_raw_stream(&mut writer, binary_size).await?;
+        }
+        Ok::<(), PocketBridgeError>(())
+    };
 
-    // 3. Receive Echo Reply Envelope
-    let reply_env = read_envelope(stream).await?;
-    if reply_env.kind != MessageKind::BenchmarkEchoReply {
-        return Err(PocketBridgeError::UnexpectedMessage {
-            expected: "BENCHMARK_ECHO_REPLY".into(),
-            got: format!("{:?}", reply_env.kind),
-        });
-    }
+    let read_task = async {
+        let reply_env = read_envelope(&mut reader).await?;
+        if reply_env.kind != MessageKind::BenchmarkEchoReply {
+            return Err(PocketBridgeError::UnexpectedMessage {
+                expected: "BENCHMARK_ECHO_REPLY".into(),
+                got: format!("{:?}", reply_env.kind),
+            });
+        }
+        if binary_size > 0 {
+            drain_raw_stream(&mut reader, binary_size).await?;
+        }
+        Ok::<Envelope, PocketBridgeError>(reply_env)
+    };
 
-    // 4. Drain Echoed Raw Bytes
-    if binary_size > 0 {
-        drain_raw_stream(stream, binary_size).await?;
-    }
+    let (_, reply_env) = tokio::try_join!(write_task, read_task)?;
 
     let round_trip_ms = t_start.elapsed().as_secs_f64() * 1000.0;
 
