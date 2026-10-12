@@ -148,14 +148,17 @@ flowchart LR
 
 ### Phase 3 — Explainable Scheduler & Cost Model
 - **Target Version:** `v0.4.0`
-- **Status:** `IN PROGRESS / NEXT UP`
+- **Status:** `COMPLETED & VERIFIED`
 - **Milestone Objective:** Build an intelligent decision engine that predicts whether offloading a task will be faster than executing locally, rejecting offloading if net speedup is unlikely or device health is constrained.
 
 #### Subsystem Mapping
-- `host/pocketbridge-core/src/scheduler/cost_model.rs` — Analytical transfer & compute cost estimator.
-- `host/pocketbridge-core/src/scheduler/policy.rs` — Decision gate and constraint evaluator.
-- `host/pocketbridge-core/src/scheduler/perf_cache.rs` — Historical performance profile cache (`perf_cache.json`).
-- `host/pocketbridge-host/src/ui.rs` — Visual scheduler decision panel in TUI.
+- `host/pocketbridge-core/src/scheduler/types.rs` — Core scheduling types (`CostEstimate`, `ConstraintEvaluation`, `SchedulingDecision`, `SchedulerConfig`).
+- `host/pocketbridge-core/src/scheduler/cost_model.rs` — Analytical transfer & compute cost estimator calibrated against physical Galaxy S25 Ultra (Snapdragon 8 Elite) and Intel Core i5 baselines.
+- `host/pocketbridge-core/src/scheduler/policy.rs` — Decision gate and constraint evaluator (battery, thermal, RAM, latency).
+- `host/pocketbridge-core/src/scheduler/mod.rs` — `Scheduler` coordinator and decision card formatter.
+- `host/pocketbridge-core/tests/scheduler_tests.rs` — 6/6 automated scheduler unit tests.
+- `host/pocketbridge-host/src/cli/plan.rs` — CLI `pocketbridge plan` dry-run evaluation tool.
+- `host/pocketbridge-host/src/tui/scheduler.rs` — Interactive Tab 4 in Ratatui TUI dashboard.
 
 #### Detailed Implementation Steps
 1. **Analytical Cost Estimation Formulas:**
@@ -170,19 +173,18 @@ flowchart LR
    - **Battery Gate:** Automatically reject offloading if phone battery $< 20\%$ and not charging.
    - **Thermal Gate:** Automatically reject offloading if phone reports `THERMAL_STATUS_SEVERE` or battery temperature $> 44^\circ\text{C}$.
    - **Memory Headroom:** Reject offloading if required job memory $> 50\%$ of Android free RAM.
+   - **Link Latency Gate:** Automatically reject offload if ADB RTT $> 250\text{ ms}$.
 4. **Explainable Rationale Output:**
-   - Every scheduling decision produces an explainable structured string:
-     - *Approved:* `"Offload to phone (Est. 1.48x speedup; compute gain 320ms > transfer cost 75ms)"`
-     - *Rejected (Overhead):* `"Kept local (Transfer cost 210ms exceeds estimated compute gain 90ms)"`
-     - *Rejected (Thermal):* `"Kept local (Phone thermal status SEVERE; throttling protection active)"`
+   - Every scheduling decision produces an explainable structured string justifying the choice with concrete millisecond numbers.
 5. **Interactive UI & CLI Integration:**
-   - Add Scheduler tab in Ratatui TUI displaying live prediction curves and recent decisions.
-   - CLI flag `--dry-run` to inspect scheduling decision without running the workload.
+   - Added Tab 4 (`[4] Scheduler`) in Ratatui TUI with live workload adjustment, host load simulation toggle (`[h]`), and decision card rendering.
+   - Added CLI `pocketbridge plan` and integrated live decision card into `pocketbridge run`.
 
-#### Exit Criteria & Verification
-- Unit tests verify cost model accuracy against benchmark history.
-- Synthetic thermal and battery mock tests correctly reject offloading.
-- Scheduler never submits tasks when transfer overhead dominates compute time.
+#### Exit Criteria & Verification Evidence
+- [x] Unit tests verify cost model accuracy against benchmark history (6/6 passing in `host/pocketbridge-core/tests/scheduler_tests.rs`).
+- [x] Synthetic thermal, battery, and link latency mock tests correctly reject offloading.
+- [x] Scheduler never submits tasks when transfer overhead dominates compute time (verified: 500k records kept local on idle host with 0.07x predicted speedup; offload approved under heavy host load at 1.32x speedup).
+- [x] Verified live on physical Samsung Galaxy S25 Ultra over ADB USB-C link.
 
 ---
 

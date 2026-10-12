@@ -2,6 +2,7 @@ pub mod app;
 pub mod benchmark;
 pub mod dashboard;
 pub mod profile;
+pub mod scheduler;
 
 use std::io;
 use std::time::Duration;
@@ -24,8 +25,8 @@ use app::{ActiveTab, App};
 use pocketbridge_core::{
     collect_host_profile, profiler::build_worker_profile_from_props, read_envelope,
     run_benchmark_suite, save_benchmark_report, write_envelope, AdbTransport, AgentRole,
-    BenchmarkConfig, ChunkTransformParams, Envelope, HeartbeatPayload, HelloPayload, LocalExecutor,
-    MessageKind, RemoteJobClient,
+    BenchmarkConfig, ChunkTransformParams, CostModel, Envelope, HeartbeatPayload, HelloPayload,
+    LocalExecutor, MessageKind, RemoteJobClient, Scheduler, SchedulerConfig,
 };
 
 pub async fn run() -> Result<()> {
@@ -51,6 +52,8 @@ pub async fn run() -> Result<()> {
         }
     }
 
+    update_scheduler_evaluation(&mut app);
+
     let res = run_loop(&mut terminal, &mut app).await;
 
     disable_raw_mode()?;
@@ -58,6 +61,27 @@ pub async fn run() -> Result<()> {
     terminal.show_cursor()?;
 
     res
+}
+
+fn update_scheduler_evaluation(app: &mut App) {
+    let config = SchedulerConfig {
+        speedup_margin: app.scheduler_margin,
+        host_load_factor: app.scheduler_host_load,
+        ..Default::default()
+    };
+    let scheduler = Scheduler::new(config, CostModel::default());
+    let input_bytes = (app.job_records as usize) * 8;
+    let output_bytes = (app.job_records as usize) * 8;
+
+    let decision = scheduler.evaluate_task(
+        app.job_records,
+        app.job_rounds,
+        input_bytes,
+        output_bytes,
+        app.worker_profile.as_ref(),
+        app.last_rtt_ms,
+    );
+    app.scheduler_decision = Some(decision);
 }
 
 async fn run_loop<B: ratatui::backend::Backend>(
@@ -78,11 +102,11 @@ async fn run_loop<B: ratatui::backend::Backend>(
                 ])
                 .split(size);
 
-            let titles = vec!["[1] Dashboard", "[2] Benchmark", "[3] Device Profile"];
+            let titles = vec!["[1] Dashboard", "[2] Benchmark", "[3] Device Profile", "[4] Scheduler"];
             let tab_index = app.active_tab as usize;
             let tabs = Tabs::new(titles)
                 .select(tab_index)
-                .block(Block::default().borders(Borders::ALL).title(" PocketBridge v0.1.0 (Feasibility & Compute Offloader) "))
+                .block(Block::default().borders(Borders::ALL).title(" PocketBridge v0.4.0 (Explainable Offloader & Cost Model) "))
                 .style(Style::default().fg(Color::White))
                 .highlight_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
             f.render_widget(tabs, chunks[0]);
@@ -91,12 +115,14 @@ async fn run_loop<B: ratatui::backend::Backend>(
                 ActiveTab::Dashboard => dashboard::render(f, app, chunks[1]),
                 ActiveTab::Benchmark => benchmark::render(f, app, chunks[1]),
                 ActiveTab::Profile => profile::render(f, app, chunks[1]),
+                ActiveTab::Scheduler => scheduler::render(f, app, chunks[1]),
             }
 
             let footer_text = match app.active_tab {
                 ActiveTab::Dashboard => "[Tab] Tabs | [c] Connect | [j] Run Compute Job | [d] Disconnect | [r] Refresh | [q] Quit",
                 ActiveTab::Benchmark => "[Enter] Run Benchmark | [+/-] Repetitions | [s] Save Report | [Tab] Tabs | [q] Quit",
                 ActiveTab::Profile => "[r] Refresh Profile | [c] Connect | [Tab] Tabs | [q] Quit",
+                ActiveTab::Scheduler => "[p] Evaluate Plan | [h] Toggle Host Load | [+/-] Records | [Tab] Tabs | [q] Quit",
             };
             let footer = Paragraph::new(Span::styled(footer_text, Style::default().fg(Color::Yellow)))
                 .block(Block::default().borders(Borders::ALL));
@@ -115,6 +141,7 @@ async fn run_loop<B: ratatui::backend::Backend>(
                     KeyCode::Char('1') => app.active_tab = ActiveTab::Dashboard,
                     KeyCode::Char('2') => app.active_tab = ActiveTab::Benchmark,
                     KeyCode::Char('3') => app.active_tab = ActiveTab::Profile,
+                    KeyCode::Char('4') => app.active_tab = ActiveTab::Scheduler,
                     KeyCode::Char('c') => {
                         app.connecting = true;
                         app.log(format!("Setting up ADB forwarding and connecting to port {}...", app.port));
@@ -226,12 +253,34 @@ async fn run_loop<B: ratatui::backend::Backend>(
                         }
                     }
                     KeyCode::Char('+') | KeyCode::Char('=') => {
-                        app.runs = (app.runs + 5).min(100);
-                        app.log(format!("Benchmark repetitions set to {}", app.runs));
+                        if app.active_tab == ActiveTab::Scheduler {
+                            app.job_records = match app.job_records {
+                                50_000 => 500_000,
+                                500_000 => 2_000_000,
+                                2_000_000 => 5_000_000,
+                                _ => 50_000,
+                            };
+                            update_scheduler_evaluation(app);
+                            app.log(format!("Adjusted workload to {} records", app.job_records));
+                        } else {
+                            app.runs = (app.runs + 5).min(100);
+                            app.log(format!("Benchmark repetitions set to {}", app.runs));
+                        }
                     }
                     KeyCode::Char('-') => {
-                        app.runs = (app.runs.saturating_sub(5)).max(1);
-                        app.log(format!("Benchmark repetitions set to {}", app.runs));
+                        if app.active_tab == ActiveTab::Scheduler {
+                            app.job_records = match app.job_records {
+                                5_000_000 => 2_000_000,
+                                2_000_000 => 500_000,
+                                500_000 => 50_000,
+                                _ => 5_000_000,
+                            };
+                            update_scheduler_evaluation(app);
+                            app.log(format!("Adjusted workload to {} records", app.job_records));
+                        } else {
+                            app.runs = (app.runs.saturating_sub(5)).max(1);
+                            app.log(format!("Benchmark repetitions set to {}", app.runs));
+                        }
                     }
                     KeyCode::Enter if app.active_tab == ActiveTab::Benchmark && !app.benchmark_running => {
                         app.benchmark_running = true;
@@ -293,6 +342,20 @@ async fn run_loop<B: ratatui::backend::Backend>(
                             }
                         }
                     }
+                    KeyCode::Char('p') => {
+                        update_scheduler_evaluation(app);
+                        app.log("Re-evaluated explainable scheduler decision card");
+                    }
+                    KeyCode::Char('h') | KeyCode::Char('H') => {
+                        app.scheduler_host_load = match (app.scheduler_host_load * 100.0).round() as i32 {
+                            100 => 0.50,
+                            50 => 0.20,
+                            20 => 0.05,
+                            _ => 1.00,
+                        };
+                        update_scheduler_evaluation(app);
+                        app.log(format!("Adjusted simulated host capacity to {:.0}%", app.scheduler_host_load * 100.0));
+                    }
                     _ => {}
                 }
             }
@@ -317,7 +380,17 @@ async fn run_loop<B: ratatui::backend::Backend>(
                     if let Ok(reply) = read_envelope(&mut stream).await {
                         if reply.kind == MessageKind::Heartbeat {
                             if let Ok(worker_hb) = serde_json::from_value::<HeartbeatPayload>(reply.payload) {
+                                if let Some(prof) = app.worker_profile.as_mut() {
+                                    prof.battery_percent = worker_hb.battery_percent;
+                                    prof.battery_charging = worker_hb.battery_charging;
+                                    prof.thermal_status = worker_hb.thermal_status.clone();
+                                    if let (Some(used), Some(total)) = (worker_hb.memory_used_bytes, worker_hb.memory_total_bytes) {
+                                        prof.ram_total_bytes = total;
+                                        prof.ram_available_bytes = Some(total.saturating_sub(used));
+                                    }
+                                }
                                 app.last_heartbeat = Some(worker_hb);
+                                update_scheduler_evaluation(app);
                             }
                         }
                     }

@@ -1,5 +1,6 @@
 use pocketbridge_core::{
     DeviceProfile, HeartbeatPayload, HelloPayload, JobExecutionResult, PayloadSizeResult,
+    SchedulingDecision,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -7,6 +8,7 @@ pub enum ActiveTab {
     Dashboard = 0,
     Benchmark = 1,
     Profile = 2,
+    Scheduler = 3,
 }
 
 pub struct App {
@@ -40,6 +42,12 @@ pub struct App {
     pub job_progress_pct: f32,
     pub job_status_msg: String,
     pub active_job_result: Option<JobExecutionResult>,
+
+    // Scheduler state (Phase 3)
+    pub scheduler_host_load: f64,
+    pub scheduler_margin: f64,
+    pub scheduler_decision: Option<SchedulingDecision>,
+    pub last_rtt_ms: Option<f64>,
 
     // Activity logs
     pub logs: Vec<String>,
@@ -75,6 +83,11 @@ impl App {
             job_status_msg: "Press 'j' to run compute job".into(),
             active_job_result: None,
 
+            scheduler_host_load: 1.0,
+            scheduler_margin: 1.15,
+            scheduler_decision: None,
+            last_rtt_ms: None,
+
             logs: vec!["PocketBridge initialized. Press 'c' to connect, 'j' to offload compute job.".into()],
         }
     }
@@ -92,15 +105,17 @@ impl App {
         self.active_tab = match self.active_tab {
             ActiveTab::Dashboard => ActiveTab::Benchmark,
             ActiveTab::Benchmark => ActiveTab::Profile,
-            ActiveTab::Profile => ActiveTab::Dashboard,
+            ActiveTab::Profile => ActiveTab::Scheduler,
+            ActiveTab::Scheduler => ActiveTab::Dashboard,
         };
     }
 
     pub fn prev_tab(&mut self) {
         self.active_tab = match self.active_tab {
-            ActiveTab::Dashboard => ActiveTab::Profile,
+            ActiveTab::Dashboard => ActiveTab::Scheduler,
             ActiveTab::Benchmark => ActiveTab::Dashboard,
             ActiveTab::Profile => ActiveTab::Benchmark,
+            ActiveTab::Scheduler => ActiveTab::Profile,
         };
     }
 }

@@ -1,7 +1,8 @@
 use anyhow::{Context, Result};
 use pocketbridge_core::{
-    AdbTransport, AgentRole, ChunkTransformParams, Envelope, HelloPayload, LocalExecutor,
-    MessageKind, RemoteJobClient, read_envelope, write_envelope,
+    AdbTransport, AgentRole, ChunkTransformParams, CostModel, DeviceProfile, Envelope, HeartbeatPayload,
+    HelloPayload, LocalExecutor, MessageKind, RemoteJobClient, Scheduler, SchedulerConfig,
+    profiler::build_worker_profile_from_props, read_envelope, write_envelope,
 };
 
 pub async fn execute(
@@ -10,11 +11,92 @@ pub async fn execute(
     seed: u64,
     local_only: bool,
     remote_only: bool,
+    host_load: f64,
+    margin: f64,
     port: u16,
 ) -> Result<()> {
     println!("PocketBridge Compute Workload Runner (chunk_transform.v1)");
     println!("==========================================================================");
     println!("Parameters: {} records, {} rounds per record, seed 0x{:016X}", records, rounds, seed);
+
+    let config = SchedulerConfig {
+        speedup_margin: margin,
+        host_load_factor: host_load,
+        ..Default::default()
+    };
+    let scheduler = Scheduler::new(config, CostModel::default());
+
+    // 0. Query live worker profile & RTT if worker is reachable
+    let transport = AdbTransport::new(port);
+    let mut worker_profile: Option<DeviceProfile> = None;
+    let mut rtt_ms: Option<f64> = None;
+
+    if !local_only {
+        if let Ok(_) = transport.check_device().await {
+            if let Ok(props) = transport.query_getprop().await {
+                let mut profile = build_worker_profile_from_props(&props);
+                if let Ok(_) = transport.setup_forwarding().await {
+                    if let Ok(mut stream) = transport.connect_tcp().await {
+                        let hello = Envelope::hello("pocketbridge-eval", "0.1.0", AgentRole::Host);
+                        let _ = write_envelope(&mut stream, &hello).await;
+                        if let Ok(reply) = read_envelope(&mut stream).await {
+                            if reply.kind == MessageKind::Hello {
+                                let t_ping = std::time::Instant::now();
+                                let ping_env = Envelope::benchmark_echo(1, 0, pocketbridge_core::protocol::current_unix_ms());
+                                let _ = write_envelope(&mut stream, &ping_env).await;
+                                if let Ok(ping_reply) = read_envelope(&mut stream).await {
+                                    if ping_reply.kind == MessageKind::BenchmarkEchoReply {
+                                        rtt_ms = Some(t_ping.elapsed().as_secs_f64() * 1000.0);
+                                    }
+                                }
+
+                                let hb = Envelope::heartbeat(HeartbeatPayload {
+                                    uptime_ms: 0,
+                                    cpu_usage_percent: None,
+                                    memory_used_bytes: None,
+                                    memory_total_bytes: None,
+                                    temperature_celsius: None,
+                                    battery_percent: None,
+                                    battery_charging: None,
+                                    thermal_status: None,
+                                });
+                                let _ = write_envelope(&mut stream, &hb).await;
+                                if let Ok(hb_reply) = read_envelope(&mut stream).await {
+                                    if hb_reply.kind == MessageKind::Heartbeat {
+                                        if let Ok(worker_hb) = serde_json::from_value::<HeartbeatPayload>(hb_reply.payload) {
+                                            profile.battery_percent = worker_hb.battery_percent;
+                                            profile.battery_charging = worker_hb.battery_charging;
+                                            profile.thermal_status = worker_hb.thermal_status;
+                                            if let (Some(used), Some(total)) = (worker_hb.memory_used_bytes, worker_hb.memory_total_bytes) {
+                                                profile.ram_total_bytes = total;
+                                                profile.ram_available_bytes = Some(total.saturating_sub(used));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                worker_profile = Some(profile);
+            }
+        }
+    }
+
+    // Evaluate Scheduler Decision
+    let input_bytes = (records as usize) * 8;
+    let output_bytes = (records as usize) * 8;
+    let decision = scheduler.evaluate_task(
+        records,
+        rounds,
+        input_bytes,
+        output_bytes,
+        worker_profile.as_ref(),
+        rtt_ms,
+    );
+
+    println!("\n{}", Scheduler::format_decision_card(&decision));
+
     let params = ChunkTransformParams {
         record_count: records,
         rounds,

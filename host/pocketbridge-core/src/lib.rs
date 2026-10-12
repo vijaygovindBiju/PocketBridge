@@ -4,6 +4,7 @@ pub mod error;
 pub mod job;
 pub mod profiler;
 pub mod protocol;
+pub mod scheduler;
 pub mod transport;
 
 pub use adapter::{
@@ -23,5 +24,9 @@ pub use protocol::{
     HelloPayload, JobAcceptedPayload, JobCancelledPayload, JobErrorPayload, JobLimits,
     JobProgressPayload, JobRejectedPayload, JobRequirements, JobStartedPayload, MessageKind,
     ResultManifestPayload, SubmitJobPayload,
+};
+pub use scheduler::{
+    ConstraintEvaluation, CostEstimate, CostModel, ExecutionTarget, PerformanceBaseline,
+    PolicyEngine, Scheduler, SchedulerConfig, SchedulingDecision,
 };
 pub use transport::{AdbTransport, DEFAULT_PORT};
