@@ -115,7 +115,7 @@ cargo test --workspace
 
 ## 👤 Author
 
-**Vijay Govind Biju** — [@vijaygovindBiju](https://github.com/vijaygovindBiju)
+**Vijaygovind Biju** — [@vijaygovindBiju](https://github.com/vijaygovindBiju)
 
 ---
 

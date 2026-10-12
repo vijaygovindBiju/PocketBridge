@@ -9,5 +9,5 @@ members = [
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-authors = ["Vijay Govind Biju"]
+authors = ["Vijaygovind Biju"]
 repository = "https://github.com/vijaygovindBiju/PocketBridge"
