@@ -55,6 +55,21 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        // Request exemption from battery optimizations for uninterrupted background compute
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val pm = getSystemService(android.os.PowerManager::class.java)
+            if (pm != null && !pm.isIgnoringBatteryOptimizations(packageName)) {
+                try {
+                    val intent = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                        data = android.net.Uri.parse("package:$packageName")
+                    }
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    android.util.Log.w("MainActivity", "Cannot request battery optimization: ${e.message}")
+                }
+            }
+        }
+
         setContent {
             MaterialTheme {
                 Surface(

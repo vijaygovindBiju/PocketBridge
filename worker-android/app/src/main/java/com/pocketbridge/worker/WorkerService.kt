@@ -13,6 +13,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.google.gson.Gson
 import com.pocketbridge.worker.profiler.DeviceProfiler
+import com.pocketbridge.worker.profiler.ThermalMonitor
 import com.pocketbridge.worker.protocol.BenchmarkEchoPayload
 import com.pocketbridge.worker.protocol.BenchmarkEchoReplyPayload
 import com.pocketbridge.worker.protocol.CancelJobPayload
@@ -32,10 +33,13 @@ import com.pocketbridge.worker.protocol.JobStartedPayload
 import com.pocketbridge.worker.protocol.MessageKind
 import com.pocketbridge.worker.protocol.ResultManifestPayload
 import com.pocketbridge.worker.protocol.SubmitJobPayload
+import com.pocketbridge.worker.receiver.PowerStateReceiver
 import com.pocketbridge.worker.runtime.ChunkTransformEngine
 import com.pocketbridge.worker.runtime.DataAnalyticsEngine
 import com.pocketbridge.worker.runtime.ImageBatchEngine
 import com.pocketbridge.worker.runtime.TaskRuntime
+import com.pocketbridge.worker.service.WakeLockManager
+import com.pocketbridge.worker.service.WorkerNotification
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -89,9 +93,16 @@ class WorkerService : Service() {
     private var serverSocket: ServerSocket? = null
     private val startTimeMs = System.currentTimeMillis()
 
+    private lateinit var wakeLockManager: WakeLockManager
+    private lateinit var thermalMonitor: ThermalMonitor
+    private val powerStateReceiver = PowerStateReceiver()
+
     override fun onCreate() {
         super.onCreate()
-        createNotificationChannel()
+        wakeLockManager = WakeLockManager(this)
+        thermalMonitor = ThermalMonitor(this).apply { start() }
+        powerStateReceiver.register(this)
+        WorkerNotification.createNotificationChannel(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -108,26 +119,29 @@ class WorkerService : Service() {
 
     override fun onDestroy() {
         stopWorker()
+        powerStateReceiver.unregister(this)
+        thermalMonitor.stop()
+        wakeLockManager.releaseAll()
         super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun startForegroundServiceNotification() {
-        val notification = createNotification("PocketBridge Worker Active on port $PORT")
+        val notification = WorkerNotification.buildIdleNotification(this, "Listening on 127.0.0.1:$PORT")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
             } else {
                 0
             }
-            startForeground(NOTIFICATION_ID, notification, type)
+            startForeground(WorkerNotification.NOTIFICATION_ID, notification, type)
         } else {
-            startForeground(NOTIFICATION_ID, notification)
+            startForeground(WorkerNotification.NOTIFICATION_ID, notification)
         }
         _isRunning.value = true
         _statusText.value = "Listening on 127.0.0.1:$PORT"
-        log("Foreground service started on port $PORT")
+        log("Foreground service started on port $PORT (Power & Thermal monitors active)")
     }
 
     private fun startTcpServer() {
@@ -184,9 +198,10 @@ class WorkerService : Service() {
                             uptimeMs = uptime,
                             memoryUsedBytes = profile.ramTotalBytes - profile.ramAvailableBytes,
                             memoryTotalBytes = profile.ramTotalBytes,
-                            batteryPercent = profile.batteryPercent,
-                            batteryCharging = profile.batteryCharging,
-                            thermalStatus = profile.thermalStatus
+                            batteryPercent = PowerStateReceiver.batteryPercent.value ?: profile.batteryPercent,
+                            batteryCharging = PowerStateReceiver.isCharging.value ?: profile.batteryCharging,
+                            temperatureCelsius = PowerStateReceiver.temperatureCelsius.value?.toDouble(),
+                            thermalStatus = thermalMonitor.statusString.value
                         )
                         val replyEnv = Envelope(
                             kind = MessageKind.HEARTBEAT,
@@ -235,17 +250,27 @@ class WorkerService : Service() {
 
                                 val params = gson.fromJson(submit.inputParameters, ChunkTransformParams::class.java)
 
-                                val job = serviceScope.launch {
+                                 val job = serviceScope.launch {
+                                    wakeLockManager.acquire(submit.jobId)
                                     try {
                                         val (sha256Hex, computeMs) = ChunkTransformEngine.execute(
                                             recordCount = params.recordCount,
                                             rounds = params.rounds,
                                             seed = params.seed,
                                             onProgress = { fraction ->
+                                                val elapsed = System.currentTimeMillis() - accept.acceptedAtUnixMs
+                                                WorkerNotification.updateProgressNotification(
+                                                    this@WorkerService,
+                                                    submit.adapterId,
+                                                    fraction,
+                                                    elapsed,
+                                                    thermalMonitor.statusString.value,
+                                                    PowerStateReceiver.batteryPercent.value
+                                                )
                                                 val prog = JobProgressPayload(
                                                     jobId = submit.jobId,
                                                     progressFraction = fraction,
-                                                    elapsedComputeMs = System.currentTimeMillis() - accept.acceptedAtUnixMs
+                                                    elapsedComputeMs = elapsed
                                                 )
                                                 val progEnv = Envelope(kind = MessageKind.JOB_PROGRESS, payload = gson.toJsonTree(prog))
                                                 synchronized(dataOut) {
@@ -282,6 +307,8 @@ class WorkerService : Service() {
                                             FrameCodec.writeEnvelope(dataOut, errEnv, gson)
                                         }
                                     } finally {
+                                        wakeLockManager.release(submit.jobId)
+                                        WorkerNotification.updateIdle(this@WorkerService, "Listening on 127.0.0.1:$PORT")
                                         taskRuntime.unregisterJob(submit.jobId)
                                     }
                                 }
@@ -300,7 +327,8 @@ class WorkerService : Service() {
 
                                 val params = gson.fromJson(submit.inputParameters, ImageBatchParams::class.java)
 
-                                val job = serviceScope.launch {
+                                 val job = serviceScope.launch {
+                                    wakeLockManager.acquire(submit.jobId)
                                     try {
                                         val (sha256Hex, computeMs, totalBytes) = ImageBatchEngine.execute(
                                             imageCount = params.imageCount,
@@ -309,10 +337,19 @@ class WorkerService : Service() {
                                             seed = params.seed,
                                             operation = params.operation,
                                             onProgress = { fraction ->
+                                                val elapsed = System.currentTimeMillis() - accept.acceptedAtUnixMs
+                                                WorkerNotification.updateProgressNotification(
+                                                    this@WorkerService,
+                                                    submit.adapterId,
+                                                    fraction,
+                                                    elapsed,
+                                                    thermalMonitor.statusString.value,
+                                                    PowerStateReceiver.batteryPercent.value
+                                                )
                                                 val prog = JobProgressPayload(
                                                     jobId = submit.jobId,
                                                     progressFraction = fraction,
-                                                    elapsedComputeMs = System.currentTimeMillis() - accept.acceptedAtUnixMs
+                                                    elapsedComputeMs = elapsed
                                                 )
                                                 val progEnv = Envelope(kind = MessageKind.JOB_PROGRESS, payload = gson.toJsonTree(prog))
                                                 synchronized(dataOut) {
@@ -349,6 +386,8 @@ class WorkerService : Service() {
                                             FrameCodec.writeEnvelope(dataOut, errEnv, gson)
                                         }
                                     } finally {
+                                        wakeLockManager.release(submit.jobId)
+                                        WorkerNotification.updateIdle(this@WorkerService, "Listening on 127.0.0.1:$PORT")
                                         taskRuntime.unregisterJob(submit.jobId)
                                     }
                                 }
@@ -367,7 +406,8 @@ class WorkerService : Service() {
 
                                 val params = gson.fromJson(submit.inputParameters, DataAnalyticsParams::class.java)
 
-                                val job = serviceScope.launch {
+                                 val job = serviceScope.launch {
+                                    wakeLockManager.acquire(submit.jobId)
                                     try {
                                         val result = DataAnalyticsEngine.execute(
                                             recordCount = params.recordCount,
@@ -375,10 +415,19 @@ class WorkerService : Service() {
                                             filterMin = params.filterMin,
                                             filterMax = params.filterMax,
                                             onProgress = { fraction ->
+                                                val elapsed = System.currentTimeMillis() - accept.acceptedAtUnixMs
+                                                WorkerNotification.updateProgressNotification(
+                                                    this@WorkerService,
+                                                    submit.adapterId,
+                                                    fraction,
+                                                    elapsed,
+                                                    thermalMonitor.statusString.value,
+                                                    PowerStateReceiver.batteryPercent.value
+                                                )
                                                 val prog = JobProgressPayload(
                                                     jobId = submit.jobId,
                                                     progressFraction = fraction,
-                                                    elapsedComputeMs = System.currentTimeMillis() - accept.acceptedAtUnixMs
+                                                    elapsedComputeMs = elapsed
                                                 )
                                                 val progEnv = Envelope(kind = MessageKind.JOB_PROGRESS, payload = gson.toJsonTree(prog))
                                                 synchronized(dataOut) {
@@ -415,6 +464,8 @@ class WorkerService : Service() {
                                             FrameCodec.writeEnvelope(dataOut, errEnv, gson)
                                         }
                                     } finally {
+                                        wakeLockManager.release(submit.jobId)
+                                        WorkerNotification.updateIdle(this@WorkerService, "Listening on 127.0.0.1:$PORT")
                                         taskRuntime.unregisterJob(submit.jobId)
                                     }
                                 }
@@ -458,29 +509,6 @@ class WorkerService : Service() {
         log("Stopping worker service...")
         try { serverSocket?.close() } catch (_: Exception) {}
         serviceScope.cancel()
-    }
-
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                getString(R.string.channel_name),
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = getString(R.string.channel_desc)
-            }
-            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            manager.createNotificationChannel(channel)
-        }
-    }
-
-    private fun createNotification(content: String): Notification {
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("PocketBridge Worker")
-            .setContentText(content)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
+        WorkerNotification.updateIdle(this, "Worker Stopped")
     }
 }
