@@ -34,6 +34,9 @@ flowchart LR
 | **1** | `v0.2.0` | **Vertical Slice & Deterministic Workload** | `COMPLETED` | `chunk_transform.v1` compute engine, SHA-256 equivalence validation, speedup measurement | Arch Linux + Samsung Galaxy S25 Ultra (Bit-for-bit SHA-256 verified) |
 | **2** | `v0.3.0` | **Job Lifecycle & Reliability** | `COMPLETED` | Full protocol envelopes (`SUBMIT`, `ACCEPTED`, `STARTED`, `PROGRESS`, `RESULT`, `CANCEL`), $O(1)$ streaming | Arch Linux + Samsung Galaxy S25 Ultra (100MB stream verified) |
 | **3** | `v0.4.0` | **Explainable Scheduler & Cost Model** | `IN PROGRESS` | Analytical cost-benefit engine, battery/thermal constraint gates, human-readable offload rationale | Planned Next |
+| **OPT-A** | `v0.4.1` | **Phone NDK & Hardware Acceleration** | `PLANNED` | Android NDK `aarch64` native engine, ARM NEON SIMD, Oryon Prime core pinning (4.32 GHz) | Target: Galaxy S25 Ultra |
+| **OPT-B** | `v0.4.2` | **Laptop P-Core Tuning & AVX2 Vectorization** | `PLANNED` | `target-cpu=native` AVX2/SHA-NI compiler flags, P-core thread affinity, Linux performance governor | Target: Intel i5-13420H |
+| **OPT-C** | `v0.4.3` | **Hybrid Co-Processing & Streaming Pipeline** | `PLANNED` | Split-batch scheduling (e.g. 70% laptop + 30% phone), overlapped transfer pipeline, zero-copy binary framing | Target: Dual Co-processing |
 | **4** | `v0.5.0` | **Production Task Adapters** | `PLANNED` | Image batching, FFmpeg video chunking, offline audio transcription adapters | Target: Sprint 4 |
 | **5** | `v0.6.0` | **Native Android OS & Power Integration** | `PLANNED` | WakeLock manager, thermal throttling listeners, Doze handling, notification telemetry | Target: Sprint 5 |
 | **6** | `v0.7.0` | **Multi-Worker Fleet & Mesh** | `PLANNED` | Multi-phone USB hub scheduling, dynamic work-stealing, unplug fault tolerance | Target: Sprint 6 |
@@ -315,6 +318,75 @@ flowchart LR
 - [ ] Measured end-to-end speedup $> 1.0\text{x}$ validated for at least one production media adapter.
 - [ ] Security audit passes with zero critical or high vulnerabilities.
 - [ ] Release binaries published with cryptographic SHA-256 checksums.
+
+---
+
+## ⚡ System Optimization Phases & Performance Acceleration Plan
+
+To ensure maximum performance in realistic, production environments, PocketBridge specifies three dedicated optimization milestones addressing phone silicon, laptop CPU architecture, and link pipelining:
+
+---
+
+### Optimization Phase A (OPT-A) — Phone NDK & Hardware Acceleration
+- **Target Version:** `v0.4.1`
+- **Status:** `PLANNED`
+- **Objective:** Bypass Android ART JVM bytecode interpretation and maximize Snapdragon 8 Elite hardware silicon execution.
+
+#### Technical Implementation Details:
+1. **Android NDK Native C++/Rust Engine:**
+   - Implement native JNI compute kernels (`worker-android/app/src/main/cpp/`).
+   - Compile directly to `aarch64` machine code using Clang with aggressive vectorization: `-O3 -march=armv8.2-a+crypto+simd -flto`.
+   - Utilize 128-bit ARM NEON vector registers and dedicated hardware ARMv8 Cryptographic extensions (hardware SHA-256 instructions).
+2. **CPU Core Affinity (Oryon Prime Pinning):**
+   - Pin high-priority worker threads strictly to the **2 Oryon Prime cores (4.32 GHz)** using Linux `sched_setaffinity()` via NDK, preventing thread migration to lower-clocked cores.
+3. **Mobile GPU Compute Shaders (Vulkan):**
+   - Implement compute pipelines leveraging the Adreno 830 GPU for large-batch parallel transformations and image filter kernels.
+4. **Hardware DSP & MediaCodec Integration:**
+   - Offload video transcoding directly to Qualcomm Spectra / MediaCodec hardware encoders with zero CPU usage.
+
+**Expected Speedup:** 3× to 5× increase in raw compute throughput on mobile hardware.
+
+---
+
+### Optimization Phase B (OPT-B) — Host Intel Architecture & Kernel Tuning
+- **Target Version:** `v0.4.2`
+- **Status:** `PLANNED`
+- **Objective:** Eliminate Intel Raptor Lake hybrid core scheduling penalties and unlock hardware AVX2 / SHA-NI extensions.
+
+#### Technical Implementation Details:
+1. **Target Native Architecture Compilation:**
+   - Configure `.cargo/config.toml` with `RUSTFLAGS="-C target-cpu=native"`.
+   - Generates hardware AVX2, FMA, and Intel SHA Extensions instructions (`sha256rnds2`).
+2. **P-Core vs. E-Core Heterogeneous Pinning:**
+   - Detect hybrid core topology on Arch Linux via `/sys/devices/system/cpu/cpu*/topology/`.
+   - Bind latency-sensitive compute threads to Performance Cores (`cpu0`–`cpu7`) to avoid the 3.4 GHz Gracemont efficiency core latency penalty.
+3. **Linux CPU Performance Governor Hook:**
+   - Automatically switch governor to `performance` mode (`cpupower frequency-set -g performance`) during active workloads to eliminate burst clock ramp-up latency.
+4. **Adaptive Rayon Work-Stealing:**
+   - Implement work-stealing job pools that dynamically assign more micro-chunks to faster P-cores and fewer to E-cores for perfect load balancing.
+
+**Expected Speedup:** 2× to 3× speedup on local reference code, establishing an honest, high-performance host baseline.
+
+---
+
+### Optimization Phase C (OPT-C) — Hybrid Co-Processing & Streaming Pipeline
+- **Target Version:** `v0.4.3`
+- **Status:** `PLANNED`
+- **Objective:** Transition from binary offloading to cooperative parallel co-processing and hide network transfer latency.
+
+#### Technical Implementation Details:
+1. **Hybrid Distributed Co-Processing:**
+   - Instead of running 100% on the laptop OR 100% on the phone, the scheduler partitions large batches:
+     - 70% of chunks assigned to the laptop.
+     - 30% of chunks assigned to the phone.
+   - Both devices execute concurrently, finishing in less wall-clock time than either device alone.
+2. **Overlapped Streaming Pipeline:**
+   - Slices workloads into asynchronous streaming chunks where Chunk $N+1$ is transferred over USB-C while Chunk $N$ is actively computing on the phone.
+   - Eliminates transfer wait time, hiding network overhead behind active execution.
+3. **Zero-Copy Binary Serialization:**
+   - Replace JSON envelopes for task payloads with zero-copy binary serialization (FlatBuffers / Bincode).
+
+**Expected Speedup:** Cuts total wall-clock execution time by up to 50% across combined devices.
 
 ---
 
