@@ -13,6 +13,8 @@ worker-android/*/*.iml
 worker-android/captures/
 worker-android/.externalNativeBuild/
 worker-android/.cxx/
+worker-android/**/.cxx/
+**/.cxx/
 
 # OS and Editor files
 .DS_Store

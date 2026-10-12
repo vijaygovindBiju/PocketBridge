@@ -7,6 +7,8 @@ android {
     namespace = "com.pocketbridge.worker"
     compileSdk = 35
 
+    ndkVersion = "28.2.13676358"
+
     defaultConfig {
         applicationId = "com.pocketbridge.worker"
         minSdk = 26
@@ -15,6 +17,20 @@ android {
         versionName = "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        externalNativeBuild {
+            cmake {
+                cppFlags += listOf("-O3", "-flto", "-fvisibility=hidden")
+                abiFilters += listOf("arm64-v8a")
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 
     buildTypes {

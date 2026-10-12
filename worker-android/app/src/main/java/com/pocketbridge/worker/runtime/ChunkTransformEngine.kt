@@ -12,6 +12,22 @@ object ChunkTransformEngine {
     const val MULTIPLIER_1 = -0x61C8864680B583EBL // 0x9E3779B97F4A7C15L in two's complement
     const val MULTIPLIER_2 = 0x2545F4914F6CDD1DL
 
+    private var nativeLoaded = false
+
+    init {
+        try {
+            System.loadLibrary("pocketbridge_native")
+            nativeLoaded = true
+            android.util.Log.i("ChunkTransformEngine", "Loaded native C++ acceleration engine (pocketbridge_native.so)")
+        } catch (t: Throwable) {
+            android.util.Log.w("ChunkTransformEngine", "Native library not available, falling back to Kotlin: ${t.message}")
+            nativeLoaded = false
+        }
+    }
+
+    @JvmStatic
+    private external fun nativeTransform(recordCount: Long, rounds: Int, seed: Long): String
+
     @JvmStatic
     inline fun transformRecord(index: Long, seed: Long, rounds: Int): Long {
         var state = seed + (index * MULTIPLIER_1)
@@ -32,6 +48,17 @@ object ChunkTransformEngine {
         onProgress: suspend (Float) -> Unit
     ): Pair<String, Long> = coroutineScope {
         val tStart = System.currentTimeMillis()
+
+        if (nativeLoaded) {
+            onProgress(0.1f)
+            val shaHex = kotlinx.coroutines.withContext(Dispatchers.Default) {
+                nativeTransform(recordCount, rounds, seed)
+            }
+            onProgress(1.0f)
+            val durationMs = System.currentTimeMillis() - tStart
+            return@coroutineScope Pair(shaHex, durationMs)
+        }
+
         val md = MessageDigest.getInstance("SHA-256")
 
         // Chunk into parallel batches to distribute across all Snapdragon 8 Elite CPU cores
