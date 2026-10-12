@@ -1,45 +1,69 @@
-# PocketBridge — Complete Implementation Phases & Detailed Roadmap
+# PocketBridge — Master Phases Roadmap to Version 1.0 (v1.0.0)
 
-This document outlines the master implementation roadmap for **PocketBridge**. It details every development phase—from initial feasibility and link benchmarking to multi-device clustering and hardware acceleration—providing technical goals, architectural components, step-by-step implementation tasks, protocol envelopes, and verification exit criteria.
-
----
-
-## 📊 Master Phase Summary & Status
-
-| Phase | Milestone Name | Status | Key Deliverable | Verified Target / Environment |
-| :---: | :--- | :---: | :--- | :--- |
-| **0** | **Feasibility & Link Foundation** | `COMPLETED` | USB-C ADB framing, latency ping, 100MB throughput tests, hardware profiler, Ratatui TUI | Arch Linux + Android 14 (Redmi Note 13 Pro 5G) |
-| **1** | **Vertical Slice & Deterministic Workload** | `COMPLETED` | `chunk_transform.v1` compute engine, SHA-256 equivalence validation, speedup measurement | Arch Linux + Android 14 (ARM64) |
-| **2** | **Job Lifecycle & Reliability** | `COMPLETED` | Full protocol envelopes (`SUBMIT`, `ACCEPTED`, `STARTED`, `PROGRESS`, `RESULT`, `CANCEL`), $O(1)$ streaming | MockWorker & Physical Android Worker |
-| **3** | **Explainable Scheduler & Cost Model** | `PLANNED` | Analytical cost-benefit engine, battery/thermal constraint gates, human-readable offload rationale | Next Milestone |
-| **4** | **Production Task Adapters** | `PLANNED` | Image batching, FFmpeg video chunking, offline audio transcription adapters | Target: Q2 |
-| **5** | **Android OS & Power Integration** | `PLANNED` | WakeLock manager, thermal throttling listeners, Doze handling, notification telemetry | Target: Q2 |
-| **6** | **Multi-Worker Fleet & Mesh** | `PLANNED` | Multi-phone USB hub scheduling, dynamic work-stealing, unplug fault tolerance | Target: Q3 |
-| **R** | **Research: NDK & Hardware Acceleration** | `EXPLORATORY` | Android NDK SIMD C++ kernels, Vulkan/OpenCL compute shaders, direct AOA USB streaming | Long-term R&D |
+This document defines the complete development roadmap for **PocketBridge** from initial inception through the **Version 1.0 (v1.0.0) Production Release**. Every phase defines a strict architectural milestone with technical objectives, subsystem mapping, detailed implementation steps, wire protocol envelopes, and empirical exit criteria.
 
 ---
 
-## 🏛️ Comprehensive Phase Breakdown & Implementation Plans
+## 🗺️ Master Phase Matrix to Version 1.0
+
+```mermaid
+flowchart LR
+    P0["Phase 0: Feasibility\n(v0.1.0)"] --> P1["Phase 1: Vertical Slice\n(v0.2.0)"]
+    P1 --> P2["Phase 2: Job Lifecycle\n(v0.3.0)"]
+    P2 --> P3["Phase 3: Explainable Scheduler\n(v0.4.0)"]
+    P3 --> P4["Phase 4: Production Adapters\n(v0.5.0)"]
+    P4 --> P5["Phase 5: Android Power & OS\n(v0.6.0)"]
+    P5 --> P6["Phase 6: Multi-Worker Mesh\n(v0.7.0)"]
+    P6 --> V1["Version 1.0 Release\n(v1.0.0)"]
+    V1 -.-> R["Post-v1.0 Research\n(NDK / Vulkan)"]
+
+    classDef done fill:#2e7d32,stroke:#1b5e20,color:#fff;
+    classDef active fill:#f57f17,stroke:#e65100,color:#fff;
+    classDef planned fill:#1565c0,stroke:#0d47a1,color:#fff;
+    classDef release fill:#6a1b9a,stroke:#4a148c,color:#fff;
+
+    class P0,P1,P2 done;
+    class P3 active;
+    class P4,P5,P6 planned;
+    class V1 release;
+```
+
+| Phase | Target Version | Milestone Name | Status | Key Deliverable | Verified Environment |
+| :---: | :---: | :--- | :---: | :--- | :--- |
+| **0** | `v0.1.0` | **Feasibility & Link Foundation** | `COMPLETED` | USB-C ADB framing, latency ping, 100MB throughput tests, hardware profiler, Ratatui TUI | Arch Linux + Android 14 (Redmi Note 13 Pro 5G) |
+| **1** | `v0.2.0` | **Vertical Slice & Deterministic Workload** | `COMPLETED` | `chunk_transform.v1` compute engine, SHA-256 equivalence validation, speedup measurement | Arch Linux + Android 14 (ARM64) |
+| **2** | `v0.3.0` | **Job Lifecycle & Reliability** | `COMPLETED` | Full protocol envelopes (`SUBMIT`, `ACCEPTED`, `STARTED`, `PROGRESS`, `RESULT`, `CANCEL`), $O(1)$ streaming | MockWorker & Physical Android Worker |
+| **3** | `v0.4.0` | **Explainable Scheduler & Cost Model** | `IN PROGRESS` | Analytical cost-benefit engine, battery/thermal constraint gates, human-readable offload rationale | Planned Next |
+| **4** | `v0.5.0` | **Production Task Adapters** | `PLANNED` | Image batching, FFmpeg video chunking, offline audio transcription adapters | Target: Sprint 4 |
+| **5** | `v0.6.0` | **Native Android OS & Power Integration** | `PLANNED` | WakeLock manager, thermal throttling listeners, Doze handling, notification telemetry | Target: Sprint 5 |
+| **6** | `v0.7.0` | **Multi-Worker Fleet & Mesh** | `PLANNED` | Multi-phone USB hub scheduling, dynamic work-stealing, unplug fault tolerance | Target: Sprint 6 |
+| **v1.0** | `v1.0.0` | **Production Release & Hardening** | `PLANNED` | Full test suite, security sandboxing audit, automated CI/CD packages, benchmark report | Version 1.0 Milestone |
+| **R** | `v1.x+` | **Post-v1.0 Research: NDK & Hardware Accel** | `EXPLORATORY` | Android NDK SIMD C++ kernels, Vulkan/OpenCL compute shaders, direct AOA USB streaming | Long-term R&D |
 
 ---
 
-### Phase 0 — Feasibility & Protocol Foundation
-**Status:** `COMPLETED & VERIFIED`  
-**Primary Goal:** Establish physical link constraints, measure real USB-C ADB bandwidth and latency, and build the interactive host control plane.
+## 🏛️ All Phases Detailed Implementation Plans
 
-#### Key Architectural Components
+---
+
+### Phase 0 — Feasibility & Link Foundation
+- **Target Version:** `v0.1.0`
+- **Status:** `COMPLETED & VERIFIED`
+- **Milestone Objective:** Establish physical link constraints, measure real USB-C ADB bandwidth and latency, and build the interactive host control plane.
+
+#### Subsystem Mapping
 - `host/pocketbridge-core/src/protocol/framing.rs` — Length-prefixed framing socket.
 - `host/pocketbridge-core/src/profiler/` — Host Linux hardware inspection.
 - `host/pocketbridge-core/src/runner/benchmark.rs` — Ping and throughput test harness.
 - `host/pocketbridge-host/src/ui.rs` — Ratatui interactive TUI dashboard.
 - `worker-android/.../service/WorkerService.kt` — Foreground TCP daemon on `127.0.0.1:9876`.
 
-#### Implementation Plan & Completed Steps
+#### Detailed Implementation Steps
 1. **Length-Prefixed Wire Framing:**
-   - Designed 4-byte big-endian header indicating payload length followed by JSON UTF-8 payload.
+   - Implemented 4-byte big-endian header indicating payload length followed by JSON UTF-8 payload.
    - Built `FramedSocket` in Rust and `WorkerService` in Kotlin with zero payload tearing.
 2. **Ping & Latency Benchmarking:**
-   - Built bidirectional timestamp ping suite; achieved **~1.8 ms median latency** over ADB USB-C tunnel.
+   - Built bidirectional timestamp ping suite; measured **~1.8 ms median latency** over ADB USB-C tunnel.
 3. **Throughput & Bandwidth Benchmarking:**
    - Evaluated 1 MB, 10 MB, and 100 MB synthetic payloads over USB-C; achieved **~28 MB/s to ~35 MB/s** sustained throughput.
 4. **Hardware Profilers:**
@@ -57,15 +81,16 @@ This document outlines the master implementation roadmap for **PocketBridge**. I
 ---
 
 ### Phase 1 — Vertical Slice & Deterministic Workload
-**Status:** `COMPLETED & VERIFIED`  
-**Primary Goal:** Run an identical, deterministic compute task on both host and worker, verify identical SHA-256 output, and measure real wall-clock speedup.
+- **Target Version:** `v0.2.0`
+- **Status:** `COMPLETED & VERIFIED`
+- **Milestone Objective:** Run an identical, deterministic compute task on both host and worker, verify identical SHA-256 output, and measure real wall-clock speedup.
 
-#### Key Architectural Components
+#### Subsystem Mapping
 - `host/pocketbridge-core/src/adapter/chunk_transform.rs` — Rust reference compute engine.
 - `worker-android/.../runtime/ChunkTransformEngine.kt` — Kotlin Android compute engine.
 - `host/pocketbridge-core/src/client/` — Remote execution orchestration client.
 
-#### Implementation Plan & Completed Steps
+#### Detailed Implementation Steps
 1. **Deterministic Algorithm (`chunk_transform.v1`):**
    - Implemented high-intensity cryptographic transform (XOR bit-twiddling, multi-round modular arithmetic, SHA-256 hashing).
    - Ensured exact mathematical parity between Rust (x86_64) and Kotlin/JVM (ARM64).
@@ -86,17 +111,18 @@ This document outlines the master implementation roadmap for **PocketBridge**. I
 
 ---
 
-### Phase 2 — Job Lifecycle & System Reliability
-**Status:** `COMPLETED & VERIFIED`  
-**Primary Goal:** Manage the complete job state lifecycle, ensure $O(1)$ memory streaming, prevent hangs on cable disconnection, and provide failure recovery.
+### Phase 2 — Job Lifecycle & Reliability
+- **Target Version:** `v0.3.0`
+- **Status:** `COMPLETED & VERIFIED`
+- **Milestone Objective:** Manage the complete job state lifecycle, ensure $O(1)$ memory streaming, prevent hangs on cable disconnection, and provide failure recovery.
 
-#### Key Architectural Components
+#### Subsystem Mapping
 - `host/pocketbridge-core/src/protocol/models.rs` — Lifecycle envelope models.
 - `host/pocketbridge-core/src/client/mod.rs` — State machine and timeout guard.
 - `worker-android/.../service/WorkerService.kt` — Coroutine-based job runner and cancellation.
 - `host/pocketbridge-core/tests/job_lifecycle_tests.rs` — Automated mock worker lifecycle suite.
 
-#### Implementation Plan & Completed Steps
+#### Detailed Implementation Steps
 1. **Protocol Envelope Lifecycle:**
    - Standardized state transitions:
      $$\text{SUBMIT\_JOB} \longrightarrow \text{JOB\_ACCEPTED} \longrightarrow \text{JOB\_STARTED} \longrightarrow \text{JOB\_PROGRESS} \longrightarrow \text{RESULT\_MANIFEST}$$
@@ -118,38 +144,28 @@ This document outlines the master implementation roadmap for **PocketBridge**. I
 ---
 
 ### Phase 3 — Explainable Scheduler & Cost Model
-**Status:** `PLANNED / NEXT UP`  
-**Primary Goal:** Build an intelligent decision engine that predicts whether offloading a task will be faster than executing locally, rejecting offloading if net speedup is unlikely or device health is constrained.
+- **Target Version:** `v0.4.0`
+- **Status:** `IN PROGRESS / NEXT UP`
+- **Milestone Objective:** Build an intelligent decision engine that predicts whether offloading a task will be faster than executing locally, rejecting offloading if net speedup is unlikely or device health is constrained.
 
-#### Architectural Components
+#### Subsystem Mapping
 - `host/pocketbridge-core/src/scheduler/cost_model.rs` — Analytical transfer & compute cost estimator.
 - `host/pocketbridge-core/src/scheduler/policy.rs` — Decision gate and constraint evaluator.
 - `host/pocketbridge-core/src/scheduler/perf_cache.rs` — Historical performance profile cache (`perf_cache.json`).
 - `host/pocketbridge-host/src/ui.rs` — Visual scheduler decision panel in TUI.
 
-#### Detailed Implementation Plan
-```mermaid
-flowchart TD
-    Task[Incoming Workload] --> CostModel[Cost Model Engine]
-    Profiles[Device Profiles & Benchmark Cache] --> CostModel
-    CostModel --> CheckConstraints{Health Constraints OK?}
-    CheckConstraints -- Battery < 20% or Severe Thermal --> RejectLocal[Execute Locally: Device Constrained]
-    CheckConstraints -- Pass --> EvalSpeedup{Est. Speedup > 1.15x?}
-    EvalSpeedup -- No: Transfer overhead too high --> KeepLocal[Execute Locally: Overhead Unfavorable]
-    EvalSpeedup -- Yes --> Offload[Offload to Android Worker]
-```
-
+#### Detailed Implementation Steps
 1. **Analytical Cost Estimation Formulas:**
-   - Compute estimated local execution duration:
+   - Model local compute duration:
      $$T_{\text{local}} = \frac{\text{Workload Complexity } (W)}{\text{Host Compute Rate } (C_{\text{host}})}$$
-   - Compute estimated remote execution duration including link latency and round-trip payload transfer:
+   - Model remote round-trip duration including link latency and payload transfer:
      $$T_{\text{remote}} = T_{\text{latency}} + \frac{D_{\text{in}} + D_{\text{out}}}{\text{Bandwidth}_{\text{link}}} + \frac{\text{Workload Complexity } (W)}{\text{Phone Compute Rate } (C_{\text{phone}})}$$
-2. **Decision Margin & Policy Gate:**
+2. **Decision Policy Margin:**
    - Enforce an offloading margin $\mu = 1.15$ (must be at least 15% faster to justify offloading energy and link contention):
      $$\text{Offload Approved if } T_{\text{remote}} < \frac{T_{\text{local}}}{\mu}$$
-3. **Hardware Constraint Verification:**
-   - **Battery Gate:** Reject offloading if phone battery $< 20\%$ and not charging.
-   - **Thermal Gate:** Reject offloading if phone reports `THERMAL_STATUS_SEVERE` or battery temperature $> 44^\circ\text{C}$.
+3. **Hardware Constraint Gates:**
+   - **Battery Gate:** Automatically reject offloading if phone battery $< 20\%$ and not charging.
+   - **Thermal Gate:** Automatically reject offloading if phone reports `THERMAL_STATUS_SEVERE` or battery temperature $> 44^\circ\text{C}$.
    - **Memory Headroom:** Reject offloading if required job memory $> 50\%$ of Android free RAM.
 4. **Explainable Rationale Output:**
    - Every scheduling decision produces an explainable structured string:
@@ -168,31 +184,24 @@ flowchart TD
 ---
 
 ### Phase 4 — Production Task Adapters
-**Status:** `PLANNED`  
-**Primary Goal:** Expand beyond synthetic benchmarks by building real-world developer and creator task adapters.
+- **Target Version:** `v0.5.0`
+- **Status:** `PLANNED`
+- **Milestone Objective:** Expand beyond synthetic benchmarks by building real-world developer and creator task adapters.
 
-#### Architectural Components
+#### Subsystem Mapping
 - `host/pocketbridge-core/src/adapter/traits.rs` — Generic `WorkloadAdapter` trait.
 - `host/pocketbridge-core/src/adapter/image_batch.rs` — Image downscale and WebP converter.
 - `host/pocketbridge-core/src/adapter/video_chunk.rs` — FFmpeg video transcode chunking manager.
 - `host/pocketbridge-core/src/adapter/audio_transcribe.rs` — Audio VAD splitter & transcription adapter.
 - `worker-android/.../runtime/` — Corresponding Kotlin/NDK adapter engines.
 
-#### Detailed Implementation Plan
+#### Detailed Implementation Steps
 1. **Generic Workload Adapter Trait:**
-   ```rust
-   pub trait WorkloadAdapter: Send + Sync {
-       fn adapter_id(&self) -> &str;
-       fn partition_input(&self, input: &Path, chunk_size: usize) -> Result<Vec<TaskChunk>>;
-       fn execute_local_chunk(&self, chunk: &TaskChunk) -> Result<ChunkResult>;
-       fn merge_results(&self, results: Vec<ChunkResult>, output: &Path) -> Result<()>;
-   }
-   ```
+   - Define canonical lifecycle for task partitioning, local execution, remote execution, and result merging.
 2. **Image Batch Processing Adapter:**
    - **Input:** Directory of high-resolution JPEG/PNG files.
    - **Processing:** Parallel downscaling, thumbnail creation, and lossy WebP compression.
    - **Android Engine:** `BitmapFactory.decodeByteArray()` and `Bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY)`.
-   - **Benefit:** High compute-to-transfer ratio; ideal for mobile mobile DSP/GPU.
 3. **FFmpeg Video Transcoding Adapter:**
    - **Input:** Video stream (MP4, MKV).
    - **Host Partitioning:** Uses `ffprobe` to identify keyframes (I-frames); splits video into GOP-aligned 10-second segments.
@@ -213,16 +222,17 @@ flowchart TD
 ---
 
 ### Phase 5 — Native Android OS & Power Integration
-**Status:** `PLANNED`  
-**Primary Goal:** Fortify the Android worker service against Android OS power management, deep Doze, and thermal throttling.
+- **Target Version:** `v0.6.0`
+- **Status:** `PLANNED`
+- **Milestone Objective:** Fortify the Android worker service against Android OS power management, deep Doze, and thermal throttling.
 
-#### Architectural Components
+#### Subsystem Mapping
 - `worker-android/.../service/WakeLockManager.kt` — Fine-grained partial wakelock lifecycle handler.
 - `worker-android/.../service/WorkerNotification.kt` — Dynamic notification drawer channel with progress metrics.
 - `worker-android/.../profiler/ThermalMonitor.kt` — Android 10+ `OnThermalStatusChangedListener`.
 - `worker-android/.../receiver/PowerStateReceiver.kt` — Charger and battery broadcast receiver.
 
-#### Detailed Implementation Plan
+#### Detailed Implementation Steps
 1. **WakeLock State Machine:**
    - Acquire `PowerManager.PARTIAL_WAKE_LOCK` strictly when `JOB_STARTED` is triggered.
    - Automatically release the WakeLock upon job completion (`RESULT_MANIFEST`), cancellation (`CANCEL_JOB`), or unexpected socket drop.
@@ -247,27 +257,17 @@ flowchart TD
 ---
 
 ### Phase 6 — Multi-Worker Fleet & Fault-Tolerant Mesh
-**Status:** `PLANNED`  
-**Primary Goal:** Connect multiple Android phones simultaneously via USB hub or local Wi-Fi to form a distributed compute cluster.
+- **Target Version:** `v0.7.0`
+- **Status:** `PLANNED`
+- **Milestone Objective:** Connect multiple Android phones simultaneously via USB hub or local Wi-Fi to form a distributed compute cluster.
 
-#### Architectural Components
+#### Subsystem Mapping
 - `host/pocketbridge-core/src/fleet/manager.rs` — Multi-device connection and ADB port manager.
 - `host/pocketbridge-core/src/fleet/work_stealing.rs` — Lock-free work-stealing job queue.
 - `host/pocketbridge-core/src/fleet/health.rs` — Heartbeat watchdog and failover coordinator.
 - `host/pocketbridge-host/src/ui/fleet_view.rs` — Multi-device cluster dashboard in Ratatui.
 
-#### Detailed Implementation Plan
-```mermaid
-flowchart TD
-    MasterQueue[Global Work Unit Queue] --> Dispatcher[Fleet Work-Stealing Dispatcher]
-    Dispatcher <--> Worker1[Phone A: Flagship 8-core]
-    Dispatcher <--> Worker2[Phone B: Mid-range 8-core]
-    Dispatcher <--> Worker3[Phone C: Spare Phone]
-    Worker2 -. Disconnected Cable .-x Failover[Health Watchdog Trigger]
-    Failover --> Requeue[Return in-flight Chunk to Master Queue]
-    Requeue --> Worker1
-```
-
+#### Detailed Implementation Steps
 1. **Multi-Device ADB Port Forwarding:**
    - Query `adb devices -l` to identify all attached device serials.
    - Assign dedicated local forward ports:
@@ -290,9 +290,38 @@ flowchart TD
 
 ---
 
+### Version 1.0 — Production Hardening & Release Gates
+- **Target Version:** `v1.0.0`
+- **Status:** `PLANNED (FINAL MILESTONE)`
+- **Milestone Objective:** Security audit, automated binary packaging, reproducible benchmark baseline, and production release sign-off.
+
+#### Detailed Implementation Steps
+1. **Security & Threat Model Audit:**
+   - Complete penetration review ensuring:
+     - Zero unauthenticated command execution pathways.
+     - Strict path traversal isolation for all worker temp directories.
+     - Localhost loopback binding only; no unauthorized exposure to LAN.
+2. **Automated Cross-Platform Packaging:**
+   - Host binary packaging (`.tar.gz`, Arch AUR PKGBUILD, Debian `.deb`).
+   - Android APK signed release builds (`release.apk`) with automated ProGuard / R8 rules.
+3. **Full End-to-End Regression Matrix:**
+   - 100 consecutive repeated runs without a single memory leak, dropped packet, or corrupted hash.
+4. **Comprehensive Benchmark Whitepaper:**
+   - Published report documenting exact speedups, overhead curves, and hardware recommendations.
+
+#### Acceptance Criteria for Version 1.0.0
+- [ ] 100 consecutive automated test runs pass with 100% success rate.
+- [ ] No unhandled exceptions on unexpected USB disconnects during active compute.
+- [ ] Measured end-to-end speedup $> 1.0\text{x}$ validated for at least one production media adapter.
+- [ ] Security audit passes with zero critical or high vulnerabilities.
+- [ ] Release binaries published with cryptographic SHA-256 checksums.
+
+---
+
 ### Research Track — Low-Level Hardware & Transparent Acceleration
-**Status:** `EXPLORATORY R&D`  
-**Primary Goal:** Investigate native NDK C++ execution, GPU compute shaders, and driverless USB streaming for maximum performance.
+- **Target Version:** `v1.x+` (Post-v1.0 Exploratory R&D)
+- **Status:** `RESEARCH`
+- **Milestone Objective:** Long-term exploration into native NDK C++ execution, GPU compute shaders, and driverless USB streaming.
 
 #### Topics Under Investigation
 1. **Android NDK C++ / Rust Kernels:**
@@ -305,14 +334,3 @@ flowchart TD
    - Investigate driverless USB bulk endpoint transfers bypassing the ADB daemon to maximize transfer throughput toward physical USB-C 3.2 Gen 1 limits ($> 300 \text{ MB/s}$).
 4. **Remote Memory & Object Caching:**
    - Empirically test whether Android RAM can be used as a high-speed L2 swap cache for laptop memory pressure without causing UI latency penalties.
-
----
-
-## 📈 Quality & Verification Checklist for Each Phase
-
-Before any milestone is marked as `COMPLETED`:
-- [x] Workspace compiles cleanly with zero warnings (`cargo check --workspace`).
-- [x] All unit and integration tests pass (`cargo test --workspace`).
-- [x] Android APK builds successfully with `./gradlew assembleDebug`.
-- [x] Documentation (`README.md`, `RULES.md`, `PHASES.md`, `docs/`) is updated and synchronized.
-- [x] Changes are committed with conventional commit hygiene and pushed to GitHub.
