@@ -40,4 +40,7 @@ pub enum PocketBridgeError {
 
     #[error("Co-processor error: {0}")]
     CoProcessorError(String),
+
+    #[error("Fleet error: {0}")]
+    FleetError(String),
 }

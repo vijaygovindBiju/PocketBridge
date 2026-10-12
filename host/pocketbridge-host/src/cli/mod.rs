@@ -1,5 +1,6 @@
 pub mod bench;
 pub mod connect;
+pub mod fleet;
 pub mod plan;
 pub mod profile;
 pub mod run;
@@ -95,6 +96,27 @@ pub enum Commands {
         #[arg(short, long, default_value_t = 9876)]
         port: u16,
     },
+    /// Discover connected ADB worker fleet and distribute workload with fault-tolerant work stealing
+    Fleet {
+        /// Workload adapter: chunk_transform (default), image_batch, data_analytics
+        #[arg(short = 'a', long, default_value = "chunk_transform")]
+        adapter: String,
+        /// Total number of records or images to process across fleet
+        #[arg(short, long, default_value_t = 100_000)]
+        records: u32,
+        /// Number of work chunks to divide the workload into
+        #[arg(short = 'c', long, default_value_t = 8)]
+        chunks: usize,
+        /// Number of mathematical rounds per record
+        #[arg(short = 'm', long, default_value_t = 20)]
+        rounds: u32,
+        /// PRNG seed
+        #[arg(short, long, default_value_t = 0x123456789ABCDEF0)]
+        seed: u64,
+        /// Base port for ADB forwarding
+        #[arg(short, long, default_value_t = 9876)]
+        base_port: u16,
+    },
 }
 
 pub async fn handle_command(cmd: Commands) -> Result<()> {
@@ -140,5 +162,13 @@ pub async fn handle_command(cmd: Commands) -> Result<()> {
         Commands::Bench { runs, port } => bench::run(runs, port).await,
         Commands::Profile { port } => profile::run(port).await,
         Commands::Connect { port } => connect::run(port).await,
+        Commands::Fleet {
+            adapter,
+            records,
+            chunks,
+            rounds,
+            seed,
+            base_port,
+        } => fleet::run(&adapter, records, chunks, rounds, seed, base_port).await,
     }
 }

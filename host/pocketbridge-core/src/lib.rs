@@ -2,6 +2,7 @@ pub mod adapter;
 pub mod benchmark;
 pub mod coprocessor;
 pub mod error;
+pub mod fleet;
 pub mod job;
 pub mod profiler;
 pub mod protocol;
@@ -14,6 +15,10 @@ pub use adapter::{
     WorkloadAdapter, ADAPTER_ID, DATA_ANALYTICS_ADAPTER_ID, IMAGE_BATCH_ADAPTER_ID,
 };
 pub use coprocessor::{partition_workload, CoProcessingResult, CoProcessor, PartitionConfig};
+pub use fleet::{
+    ChunkResult, FleetCoordinator, FleetExecutionSummary, FleetHealthMonitor, FleetManager,
+    FleetWorkQueue, WorkChunk, WorkerNode, WorkerNodeState,
+};
 pub use benchmark::{
     calculate_stats, format_bytes, format_summary_table, run_benchmark_suite, run_single_echo,
     save_benchmark_report, BenchmarkConfig, BenchmarkReport, BenchmarkStats, PayloadSizeResult,
