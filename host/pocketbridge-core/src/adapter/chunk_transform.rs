@@ -20,17 +20,51 @@ pub fn transform_record(index: u64, seed: u64, rounds: u32) -> u64 {
 }
 
 /// Execute chunk_transform over all records and compute the final SHA-256 digest.
+/// Utilizes all available CPU cores on the host for realistic multi-core comparison.
 pub fn execute_chunk_transform(params: &ChunkTransformParams) -> TransformOutput {
     let t_start = Instant::now();
-    let mut hasher = Sha256::new();
+    let num_threads = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
 
-    for i in 0..params.record_count {
-        let val = transform_record(i as u64, params.seed, params.rounds);
-        hasher.update(&val.to_be_bytes());
-    }
+    let output_sha256 = if params.record_count < 10_000 || num_threads <= 1 {
+        // Lightweight sequential path for tiny batches
+        let mut hasher = Sha256::new();
+        for i in 0..params.record_count {
+            let val = transform_record(i as u64, params.seed, params.rounds);
+            hasher.update(&val.to_be_bytes());
+        }
+        format!("{:x}", hasher.finalize())
+    } else {
+        // Full multi-core parallel execution across all host threads
+        let chunk_size = ((params.record_count as usize) + num_threads - 1) / num_threads;
+        let mut chunk_results = vec![Vec::new(); num_threads];
 
-    let hash_result = hasher.finalize();
-    let output_sha256 = format!("{:x}", hash_result);
+        std::thread::scope(|s| {
+            for (t_idx, chunk_buf) in chunk_results.iter_mut().enumerate() {
+                let start = (t_idx * chunk_size) as u64;
+                let end = (((t_idx + 1) * chunk_size) as u64).min(params.record_count as u64);
+                if start >= end {
+                    continue;
+                }
+                s.spawn(move || {
+                    let mut buf = Vec::with_capacity(((end - start) * 8) as usize);
+                    for i in start..end {
+                        let val = transform_record(i, params.seed, params.rounds);
+                        buf.extend_from_slice(&val.to_be_bytes());
+                    }
+                    *chunk_buf = buf;
+                });
+            }
+        });
+
+        let mut hasher = Sha256::new();
+        for chunk in chunk_results {
+            hasher.update(&chunk);
+        }
+        format!("{:x}", hasher.finalize())
+    };
+
     let duration_ms = t_start.elapsed().as_secs_f64() * 1000.0;
     let output_size_bytes = (params.record_count as usize) * 8;
 
