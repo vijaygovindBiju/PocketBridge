@@ -38,6 +38,8 @@ flowchart LR
 
 ```text
 PocketBridge/
+├── RULES.md                 # Core architectural rules & git commit standards
+├── PHASES.md                # Implementation phase progress & roadmap tracker
 ├── host/                    # Rust Cargo workspace
 │   ├── pocketbridge-core/   # Protocol, framing, profiler, and benchmark runner
 │   └── pocketbridge-host/   # Ratatui TUI dashboard & CLI binary
@@ -94,6 +96,8 @@ Open the **PocketBridge Worker** app on your phone and tap **"Start Worker Servi
 
 Detailed specifications and engineering decisions are available in [`docs/`](docs/):
 
+- [Project Rules & Guidelines](RULES.md) — Core architectural laws, coding standards, and git hygiene
+- [Phases & Progress Tracker](PHASES.md) — Status of completed vs. upcoming development milestones
 - [Project Specification](docs/PROJECT.md) — Vision, scope, and non-goals
 - [Architecture](docs/ARCHITECTURE.md) — Host, worker, and communication design
 - [Wire Protocol](docs/PROTOCOL.md) — Length-prefixed framing and message envelopes
