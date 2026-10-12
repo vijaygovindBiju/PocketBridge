@@ -34,4 +34,7 @@ pub enum PocketBridgeError {
 
     #[error("Benchmark error: {0}")]
     BenchmarkError(String),
+
+    #[error("Adapter error: {0}")]
+    AdapterError(String),
 }

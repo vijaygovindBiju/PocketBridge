@@ -1,23 +1,98 @@
 use anyhow::{Context, Result};
 use pocketbridge_core::{
-    AdbTransport, AgentRole, ChunkTransformParams, CostModel, DeviceProfile, Envelope, HeartbeatPayload,
-    HelloPayload, LocalExecutor, MessageKind, RemoteJobClient, Scheduler, SchedulerConfig,
     profiler::build_worker_profile_from_props, read_envelope, write_envelope,
+    AdbTransport, AgentRole, ChunkTransformParams, CostModel, DataAnalyticsParams,
+    DeviceProfile, Envelope, HeartbeatPayload, HelloPayload, ImageBatchParams,
+    MessageKind, RemoteJobClient, Scheduler, SchedulerConfig, AdapterRegistry,
 };
 
 pub async fn execute(
+    adapter_name: &str,
     records: u32,
     rounds: u32,
     seed: u64,
+    operation: &str,
+    width: u32,
+    height: u32,
     local_only: bool,
     remote_only: bool,
     host_load: f64,
     margin: f64,
     port: u16,
 ) -> Result<()> {
-    println!("PocketBridge Compute Workload Runner (chunk_transform.v1)");
+    let registry = AdapterRegistry::default();
+    let normalized = adapter_name.to_lowercase();
+    let adapter_id = match normalized.as_str() {
+        "chunk_transform" | "chunk" | "chunk_transform.v1" => "chunk_transform.v1",
+        "image_batch" | "image" | "image_batch.v1" => "image_batch.v1",
+        "data_analytics" | "analytics" | "data_analytics.v1" => "data_analytics.v1",
+        other => {
+            if registry.get(other).is_some() {
+                other
+            } else {
+                anyhow::bail!("Unknown workload adapter '{}'. Available: chunk_transform, image_batch, data_analytics", adapter_name);
+            }
+        }
+    };
+
+    let adapter = registry.get(adapter_id).context("Adapter not found in registry")?;
+
+    println!("PocketBridge Compute Workload Runner ({adapter_id})");
     println!("==========================================================================");
-    println!("Parameters: {} records, {} rounds per record, seed 0x{:016X}", records, rounds, seed);
+    println!("Description: {}", adapter.description());
+
+    let (params_json, task_records, task_rounds) = match adapter_id {
+        "chunk_transform.v1" => {
+            println!("Parameters:  {} records, {} rounds per record, seed 0x{:016X}", records, rounds, seed);
+            (
+                serde_json::to_value(ChunkTransformParams {
+                    record_count: records,
+                    rounds,
+                    seed,
+                })?,
+                records,
+                rounds,
+            )
+        }
+        "image_batch.v1" => {
+            let img_count = if records == 50_000 { 50 } else { records };
+            println!("Parameters:  {} images ({}x{}), operation='{}', seed 0x{:016X}", img_count, width, height, operation, seed);
+            (
+                serde_json::to_value(ImageBatchParams {
+                    image_count: img_count,
+                    width,
+                    height,
+                    seed,
+                    operation: operation.to_string(),
+                })?,
+                img_count,
+                width.saturating_mul(height) / 100,
+            )
+        }
+        "data_analytics.v1" => {
+            let count = if records == 50_000 { 500_000 } else { records };
+            println!("Parameters:  {} tabular records, seed 0x{:016X}, filter range: [0, i64::MAX]", count, seed);
+            (
+                serde_json::to_value(DataAnalyticsParams {
+                    record_count: count,
+                    seed,
+                    filter_min: 0,
+                    filter_max: i64::MAX,
+                })?,
+                count,
+                10,
+            )
+        }
+        _ => {
+            (serde_json::json!({ "record_count": records, "seed": seed }), records, rounds)
+        }
+    };
+
+    adapter.validate_params(&params_json)
+        .context("Invalid parameters for workload adapter")?;
+
+    let (in_bytes, out_bytes) = adapter.estimate_payload_sizes(&params_json)
+        .unwrap_or((task_records as usize * 8, task_records as usize * 8));
 
     let config = SchedulerConfig {
         speedup_margin: margin,
@@ -84,29 +159,22 @@ pub async fn execute(
     }
 
     // Evaluate Scheduler Decision
-    let input_bytes = (records as usize) * 8;
-    let output_bytes = (records as usize) * 8;
     let decision = scheduler.evaluate_task(
-        records,
-        rounds,
-        input_bytes,
-        output_bytes,
+        task_records,
+        task_rounds,
+        in_bytes,
+        out_bytes,
         worker_profile.as_ref(),
         rtt_ms,
     );
 
     println!("\n{}", Scheduler::format_decision_card(&decision));
 
-    let params = ChunkTransformParams {
-        record_count: records,
-        rounds,
-        seed,
-    };
-
     // 1. Local Run
     let local_output = if !remote_only {
         println!("\n>> Running locally on Arch Linux host...");
-        let out = LocalExecutor::run_transform(&params);
+        let out = adapter.execute_local(&params_json)
+            .context("Failed executing adapter locally")?;
         println!("   Local compute duration: {:.2} ms", out.duration_ms);
         println!("   Local output SHA-256:   {}", out.output_sha256);
         Some(out)
@@ -145,10 +213,12 @@ pub async fn execute(
 
     // Execute remote job
     println!(">> Submitting and monitoring remote job on phone...");
-    let result = RemoteJobClient::execute_remote_job(
+    let result = RemoteJobClient::execute_generic_adapter_job(
         &mut stream,
-        &params,
-        local_output.as_ref(),
+        adapter_id,
+        &params_json,
+        local_output.as_ref().map(|o| o.output_sha256.as_str()),
+        local_output.as_ref().map(|o| o.duration_ms),
         |fraction, msg| {
             print!("\r   Progress: [{:>3.0}%] {}", fraction * 100.0, msg);
             use std::io::Write;
@@ -160,6 +230,7 @@ pub async fn execute(
     println!("Job Execution Summary");
     println!("==========================================================================");
     println!("Job ID:               {}", result.job_id);
+    println!("Adapter ID:           {}", result.adapter_id);
     println!("Final Status:         {}", result.state);
     println!("Records Processed:    {}", result.records_processed);
 

@@ -8,7 +8,9 @@ pub mod scheduler;
 pub mod transport;
 
 pub use adapter::{
-    execute_chunk_transform, transform_record, ChunkTransformParams, TransformOutput, ADAPTER_ID,
+    execute_chunk_transform, transform_record, AdapterExecutionResult, AdapterRegistry,
+    ChunkTransformParams, DataAnalyticsParams, ImageBatchParams, TransformOutput,
+    WorkloadAdapter, ADAPTER_ID, DATA_ANALYTICS_ADAPTER_ID, IMAGE_BATCH_ADAPTER_ID,
 };
 pub use benchmark::{
     calculate_stats, format_bytes, format_summary_table, run_benchmark_suite, run_single_echo,

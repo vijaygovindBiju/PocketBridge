@@ -91,6 +91,21 @@ data class ChunkTransformParams(
     @SerializedName("seed") val seed: Long = 0x123456789ABCDEF0L
 )
 
+data class ImageBatchParams(
+    @SerializedName("image_count") val imageCount: Int = 50,
+    @SerializedName("width") val width: Int = 256,
+    @SerializedName("height") val height: Int = 256,
+    @SerializedName("seed") val seed: Long = -0x3501454121524111L, // 0xCAFEBABEDEADBEEFL
+    @SerializedName("operation") val operation: String = "grayscale_invert"
+)
+
+data class DataAnalyticsParams(
+    @SerializedName("record_count") val recordCount: Long = 500000,
+    @SerializedName("seed") val seed: Long = -0x21524110FEDCBA99L, // 0xDEADBEEF01234567L
+    @SerializedName("filter_min") val filterMin: Long = 0L,
+    @SerializedName("filter_max") val filterMax: Long = Long.MAX_VALUE
+)
+
 data class JobAcceptedPayload(
     @SerializedName("job_id") val jobId: String,
     @SerializedName("attempt_id") val attemptId: String,

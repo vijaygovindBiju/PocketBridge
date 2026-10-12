@@ -22,6 +22,8 @@ import com.pocketbridge.worker.protocol.FrameCodec
 import com.pocketbridge.worker.protocol.HeartbeatPayload
 import com.pocketbridge.worker.protocol.HelloPayload
 import com.pocketbridge.worker.protocol.JobAcceptedPayload
+import com.pocketbridge.worker.protocol.DataAnalyticsParams
+import com.pocketbridge.worker.protocol.ImageBatchParams
 import com.pocketbridge.worker.protocol.JobCancelledPayload
 import com.pocketbridge.worker.protocol.JobErrorPayload
 import com.pocketbridge.worker.protocol.JobProgressPayload
@@ -31,6 +33,8 @@ import com.pocketbridge.worker.protocol.MessageKind
 import com.pocketbridge.worker.protocol.ResultManifestPayload
 import com.pocketbridge.worker.protocol.SubmitJobPayload
 import com.pocketbridge.worker.runtime.ChunkTransformEngine
+import com.pocketbridge.worker.runtime.DataAnalyticsEngine
+import com.pocketbridge.worker.runtime.ImageBatchEngine
 import com.pocketbridge.worker.runtime.TaskRuntime
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -218,73 +222,210 @@ class WorkerService : Service() {
                         val submit = gson.fromJson(envelope.payload, SubmitJobPayload::class.java)
                         log("Received SUBMIT_JOB: id=${submit.jobId}, adapter=${submit.adapterId}")
 
-                        if (submit.adapterId != ChunkTransformEngine.ADAPTER_ID) {
-                            val rej = JobRejectedPayload(submit.jobId, "Unsupported adapter: ${submit.adapterId}", "UNSUPPORTED_ADAPTER")
-                            val rejEnv = Envelope(kind = MessageKind.JOB_REJECTED, payload = gson.toJsonTree(rej))
-                            FrameCodec.writeEnvelope(dataOut, rejEnv, gson)
-                        } else {
-                            val attemptId = UUID.randomUUID().toString()
-                            val accept = JobAcceptedPayload(submit.jobId, attemptId)
-                            val acceptEnv = Envelope(kind = MessageKind.JOB_ACCEPTED, payload = gson.toJsonTree(accept))
-                            FrameCodec.writeEnvelope(dataOut, acceptEnv, gson)
+                        when (submit.adapterId) {
+                            ChunkTransformEngine.ADAPTER_ID -> {
+                                val attemptId = UUID.randomUUID().toString()
+                                val accept = JobAcceptedPayload(submit.jobId, attemptId)
+                                val acceptEnv = Envelope(kind = MessageKind.JOB_ACCEPTED, payload = gson.toJsonTree(accept))
+                                FrameCodec.writeEnvelope(dataOut, acceptEnv, gson)
 
-                            val started = JobStartedPayload(submit.jobId)
-                            val startedEnv = Envelope(kind = MessageKind.JOB_STARTED, payload = gson.toJsonTree(started))
-                            FrameCodec.writeEnvelope(dataOut, startedEnv, gson)
+                                val started = JobStartedPayload(submit.jobId)
+                                val startedEnv = Envelope(kind = MessageKind.JOB_STARTED, payload = gson.toJsonTree(started))
+                                FrameCodec.writeEnvelope(dataOut, startedEnv, gson)
 
-                            val params = gson.fromJson(submit.inputParameters, ChunkTransformParams::class.java)
+                                val params = gson.fromJson(submit.inputParameters, ChunkTransformParams::class.java)
 
-                            val job = serviceScope.launch {
-                                try {
-                                    val (sha256Hex, computeMs) = ChunkTransformEngine.execute(
-                                        recordCount = params.recordCount,
-                                        rounds = params.rounds,
-                                        seed = params.seed,
-                                        onProgress = { fraction ->
-                                            val prog = JobProgressPayload(
-                                                jobId = submit.jobId,
-                                                progressFraction = fraction,
-                                                elapsedComputeMs = System.currentTimeMillis() - accept.acceptedAtUnixMs
-                                            )
-                                            val progEnv = Envelope(kind = MessageKind.JOB_PROGRESS, payload = gson.toJsonTree(prog))
-                                            synchronized(dataOut) {
-                                                FrameCodec.writeEnvelope(dataOut, progEnv, gson)
+                                val job = serviceScope.launch {
+                                    try {
+                                        val (sha256Hex, computeMs) = ChunkTransformEngine.execute(
+                                            recordCount = params.recordCount,
+                                            rounds = params.rounds,
+                                            seed = params.seed,
+                                            onProgress = { fraction ->
+                                                val prog = JobProgressPayload(
+                                                    jobId = submit.jobId,
+                                                    progressFraction = fraction,
+                                                    elapsedComputeMs = System.currentTimeMillis() - accept.acceptedAtUnixMs
+                                                )
+                                                val progEnv = Envelope(kind = MessageKind.JOB_PROGRESS, payload = gson.toJsonTree(prog))
+                                                synchronized(dataOut) {
+                                                    FrameCodec.writeEnvelope(dataOut, progEnv, gson)
+                                                }
                                             }
-                                        }
-                                    )
+                                        )
 
-                                    val manifest = ResultManifestPayload(
-                                        jobId = submit.jobId,
-                                        adapterId = submit.adapterId,
-                                        status = "succeeded",
-                                        outputSizeBytes = params.recordCount * 8,
-                                        outputSha256 = sha256Hex,
-                                        computeDurationMs = computeMs,
-                                        recordsProcessed = params.recordCount
-                                    )
-                                    val manifestEnv = Envelope(kind = MessageKind.RESULT_MANIFEST, payload = gson.toJsonTree(manifest))
-                                    synchronized(dataOut) {
-                                        FrameCodec.writeEnvelope(dataOut, manifestEnv, gson)
+                                        val manifest = ResultManifestPayload(
+                                            jobId = submit.jobId,
+                                            adapterId = submit.adapterId,
+                                            status = "succeeded",
+                                            outputSizeBytes = params.recordCount * 8,
+                                            outputSha256 = sha256Hex,
+                                            computeDurationMs = computeMs,
+                                            recordsProcessed = params.recordCount
+                                        )
+                                        val manifestEnv = Envelope(kind = MessageKind.RESULT_MANIFEST, payload = gson.toJsonTree(manifest))
+                                        synchronized(dataOut) {
+                                            FrameCodec.writeEnvelope(dataOut, manifestEnv, gson)
+                                        }
+                                        log("Job ${submit.jobId} (chunk_transform) finished in ${computeMs}ms (sha=$sha256Hex)")
+                                    } catch (e: CancellationException) {
+                                        log("Job ${submit.jobId} cancelled")
+                                        val cancelEnv = Envelope(kind = MessageKind.CANCELLED, payload = gson.toJsonTree(JobCancelledPayload(submit.jobId)))
+                                        synchronized(dataOut) {
+                                            FrameCodec.writeEnvelope(dataOut, cancelEnv, gson)
+                                        }
+                                    } catch (e: Exception) {
+                                        log("Job ${submit.jobId} failed: ${e.message}")
+                                        val err = JobErrorPayload(submit.jobId, "EXECUTION_ERROR", e.message ?: "Unknown error")
+                                        val errEnv = Envelope(kind = MessageKind.JOB_ERROR, payload = gson.toJsonTree(err))
+                                        synchronized(dataOut) {
+                                            FrameCodec.writeEnvelope(dataOut, errEnv, gson)
+                                        }
+                                    } finally {
+                                        taskRuntime.unregisterJob(submit.jobId)
                                     }
-                                    log("Job ${submit.jobId} finished in ${computeMs}ms (sha=$sha256Hex)")
-                                } catch (e: CancellationException) {
-                                    log("Job ${submit.jobId} cancelled")
-                                    val cancelEnv = Envelope(kind = MessageKind.CANCELLED, payload = gson.toJsonTree(JobCancelledPayload(submit.jobId)))
-                                    synchronized(dataOut) {
-                                        FrameCodec.writeEnvelope(dataOut, cancelEnv, gson)
-                                    }
-                                } catch (e: Exception) {
-                                    log("Job ${submit.jobId} failed: ${e.message}")
-                                    val err = JobErrorPayload(submit.jobId, "EXECUTION_ERROR", e.message ?: "Unknown error")
-                                    val errEnv = Envelope(kind = MessageKind.JOB_ERROR, payload = gson.toJsonTree(err))
-                                    synchronized(dataOut) {
-                                        FrameCodec.writeEnvelope(dataOut, errEnv, gson)
-                                    }
-                                } finally {
-                                    taskRuntime.unregisterJob(submit.jobId)
                                 }
+                                taskRuntime.registerJob(submit.jobId, job)
                             }
-                            taskRuntime.registerJob(submit.jobId, job)
+
+                            ImageBatchEngine.ADAPTER_ID -> {
+                                val attemptId = UUID.randomUUID().toString()
+                                val accept = JobAcceptedPayload(submit.jobId, attemptId)
+                                val acceptEnv = Envelope(kind = MessageKind.JOB_ACCEPTED, payload = gson.toJsonTree(accept))
+                                FrameCodec.writeEnvelope(dataOut, acceptEnv, gson)
+
+                                val started = JobStartedPayload(submit.jobId)
+                                val startedEnv = Envelope(kind = MessageKind.JOB_STARTED, payload = gson.toJsonTree(started))
+                                FrameCodec.writeEnvelope(dataOut, startedEnv, gson)
+
+                                val params = gson.fromJson(submit.inputParameters, ImageBatchParams::class.java)
+
+                                val job = serviceScope.launch {
+                                    try {
+                                        val (sha256Hex, computeMs, totalBytes) = ImageBatchEngine.execute(
+                                            imageCount = params.imageCount,
+                                            width = params.width,
+                                            height = params.height,
+                                            seed = params.seed,
+                                            operation = params.operation,
+                                            onProgress = { fraction ->
+                                                val prog = JobProgressPayload(
+                                                    jobId = submit.jobId,
+                                                    progressFraction = fraction,
+                                                    elapsedComputeMs = System.currentTimeMillis() - accept.acceptedAtUnixMs
+                                                )
+                                                val progEnv = Envelope(kind = MessageKind.JOB_PROGRESS, payload = gson.toJsonTree(prog))
+                                                synchronized(dataOut) {
+                                                    FrameCodec.writeEnvelope(dataOut, progEnv, gson)
+                                                }
+                                            }
+                                        )
+
+                                        val manifest = ResultManifestPayload(
+                                            jobId = submit.jobId,
+                                            adapterId = submit.adapterId,
+                                            status = "succeeded",
+                                            outputSizeBytes = totalBytes,
+                                            outputSha256 = sha256Hex,
+                                            computeDurationMs = computeMs,
+                                            recordsProcessed = params.imageCount.toLong()
+                                        )
+                                        val manifestEnv = Envelope(kind = MessageKind.RESULT_MANIFEST, payload = gson.toJsonTree(manifest))
+                                        synchronized(dataOut) {
+                                            FrameCodec.writeEnvelope(dataOut, manifestEnv, gson)
+                                        }
+                                        log("Job ${submit.jobId} (image_batch) finished in ${computeMs}ms (sha=$sha256Hex)")
+                                    } catch (e: CancellationException) {
+                                        log("Job ${submit.jobId} cancelled")
+                                        val cancelEnv = Envelope(kind = MessageKind.CANCELLED, payload = gson.toJsonTree(JobCancelledPayload(submit.jobId)))
+                                        synchronized(dataOut) {
+                                            FrameCodec.writeEnvelope(dataOut, cancelEnv, gson)
+                                        }
+                                    } catch (e: Exception) {
+                                        log("Job ${submit.jobId} failed: ${e.message}")
+                                        val err = JobErrorPayload(submit.jobId, "EXECUTION_ERROR", e.message ?: "Unknown error")
+                                        val errEnv = Envelope(kind = MessageKind.JOB_ERROR, payload = gson.toJsonTree(err))
+                                        synchronized(dataOut) {
+                                            FrameCodec.writeEnvelope(dataOut, errEnv, gson)
+                                        }
+                                    } finally {
+                                        taskRuntime.unregisterJob(submit.jobId)
+                                    }
+                                }
+                                taskRuntime.registerJob(submit.jobId, job)
+                            }
+
+                            DataAnalyticsEngine.ADAPTER_ID -> {
+                                val attemptId = UUID.randomUUID().toString()
+                                val accept = JobAcceptedPayload(submit.jobId, attemptId)
+                                val acceptEnv = Envelope(kind = MessageKind.JOB_ACCEPTED, payload = gson.toJsonTree(accept))
+                                FrameCodec.writeEnvelope(dataOut, acceptEnv, gson)
+
+                                val started = JobStartedPayload(submit.jobId)
+                                val startedEnv = Envelope(kind = MessageKind.JOB_STARTED, payload = gson.toJsonTree(started))
+                                FrameCodec.writeEnvelope(dataOut, startedEnv, gson)
+
+                                val params = gson.fromJson(submit.inputParameters, DataAnalyticsParams::class.java)
+
+                                val job = serviceScope.launch {
+                                    try {
+                                        val result = DataAnalyticsEngine.execute(
+                                            recordCount = params.recordCount,
+                                            seed = params.seed,
+                                            filterMin = params.filterMin,
+                                            filterMax = params.filterMax,
+                                            onProgress = { fraction ->
+                                                val prog = JobProgressPayload(
+                                                    jobId = submit.jobId,
+                                                    progressFraction = fraction,
+                                                    elapsedComputeMs = System.currentTimeMillis() - accept.acceptedAtUnixMs
+                                                )
+                                                val progEnv = Envelope(kind = MessageKind.JOB_PROGRESS, payload = gson.toJsonTree(prog))
+                                                synchronized(dataOut) {
+                                                    FrameCodec.writeEnvelope(dataOut, progEnv, gson)
+                                                }
+                                            }
+                                        )
+
+                                        val manifest = ResultManifestPayload(
+                                            jobId = submit.jobId,
+                                            adapterId = submit.adapterId,
+                                            status = "succeeded",
+                                            outputSizeBytes = result.totalPassed * 8,
+                                            outputSha256 = result.sha256Hex,
+                                            computeDurationMs = result.durationMs,
+                                            recordsProcessed = result.totalPassed
+                                        )
+                                        val manifestEnv = Envelope(kind = MessageKind.RESULT_MANIFEST, payload = gson.toJsonTree(manifest))
+                                        synchronized(dataOut) {
+                                            FrameCodec.writeEnvelope(dataOut, manifestEnv, gson)
+                                        }
+                                        log("Job ${submit.jobId} (data_analytics) finished in ${result.durationMs}ms (sha=${result.sha256Hex})")
+                                    } catch (e: CancellationException) {
+                                        log("Job ${submit.jobId} cancelled")
+                                        val cancelEnv = Envelope(kind = MessageKind.CANCELLED, payload = gson.toJsonTree(JobCancelledPayload(submit.jobId)))
+                                        synchronized(dataOut) {
+                                            FrameCodec.writeEnvelope(dataOut, cancelEnv, gson)
+                                        }
+                                    } catch (e: Exception) {
+                                        log("Job ${submit.jobId} failed: ${e.message}")
+                                        val err = JobErrorPayload(submit.jobId, "EXECUTION_ERROR", e.message ?: "Unknown error")
+                                        val errEnv = Envelope(kind = MessageKind.JOB_ERROR, payload = gson.toJsonTree(err))
+                                        synchronized(dataOut) {
+                                            FrameCodec.writeEnvelope(dataOut, errEnv, gson)
+                                        }
+                                    } finally {
+                                        taskRuntime.unregisterJob(submit.jobId)
+                                    }
+                                }
+                                taskRuntime.registerJob(submit.jobId, job)
+                            }
+
+                            else -> {
+                                val rej = JobRejectedPayload(submit.jobId, "Unsupported adapter: ${submit.adapterId}", "UNSUPPORTED_ADAPTER")
+                                val rejEnv = Envelope(kind = MessageKind.JOB_REJECTED, payload = gson.toJsonTree(rej))
+                                FrameCodec.writeEnvelope(dataOut, rejEnv, gson)
+                            }
                         }
                     }
 

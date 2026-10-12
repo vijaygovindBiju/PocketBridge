@@ -19,21 +19,45 @@ impl RemoteJobClient {
         stream: &mut TcpStream,
         params: &ChunkTransformParams,
         local_ref: Option<&TransformOutput>,
+        progress: F,
+    ) -> Result<JobExecutionResult, PocketBridgeError>
+    where
+        F: FnMut(f32, &str),
+    {
+        let params_val = serde_json::to_value(params)?;
+        Self::execute_generic_adapter_job(
+            stream,
+            ADAPTER_ID,
+            &params_val,
+            local_ref.map(|l| l.output_sha256.as_str()),
+            local_ref.map(|l| l.duration_ms),
+            progress,
+        )
+        .await
+    }
+
+    /// Submit and execute any registered workload adapter job on the remote Android worker.
+    pub async fn execute_generic_adapter_job<F>(
+        stream: &mut TcpStream,
+        adapter_id: &str,
+        params: &serde_json::Value,
+        local_sha256: Option<&str>,
+        local_duration_ms: Option<f64>,
         mut progress: F,
     ) -> Result<JobExecutionResult, PocketBridgeError>
     where
         F: FnMut(f32, &str),
     {
         let job_id = Uuid::new_v4().to_string();
-        info!("Submitting job {job_id} to worker");
+        info!("Submitting job {job_id} ({adapter_id}) to worker");
 
         let t_total_start = Instant::now();
 
         // 1. Submit Job
         let submit_payload = SubmitJobPayload {
             job_id: job_id.clone(),
-            adapter_id: ADAPTER_ID.to_string(),
-            input_parameters: serde_json::to_value(params)?,
+            adapter_id: adapter_id.to_string(),
+            input_parameters: params.clone(),
             requirements: JobRequirements {
                 architecture: Some("aarch64".into()),
                 min_memory_bytes: 16 * 1024 * 1024,
@@ -67,15 +91,15 @@ impl RemoteJobClient {
                 let rejected: JobRejectedPayload = serde_json::from_value(accept_env.payload)?;
                 return Ok(JobExecutionResult {
                     job_id,
-                    adapter_id: ADAPTER_ID.to_string(),
+                    adapter_id: adapter_id.to_string(),
                     state: JobState::Failed,
-                    local_duration_ms: local_ref.map(|l| l.duration_ms),
+                    local_duration_ms,
                     remote_upload_ms: Some(upload_duration_ms),
                     remote_compute_ms: None,
                     remote_download_ms: None,
                     remote_total_ms: None,
                     speedup: None,
-                    local_sha256: local_ref.map(|l| l.output_sha256.clone()),
+                    local_sha256: local_sha256.map(|s| s.to_string()),
                     remote_sha256: None,
                     outputs_match: false,
                     records_processed: 0,
@@ -123,15 +147,15 @@ impl RemoteJobClient {
                     let err: crate::protocol::JobErrorPayload = serde_json::from_value(env.payload)?;
                     return Ok(JobExecutionResult {
                         job_id,
-                        adapter_id: ADAPTER_ID.to_string(),
+                        adapter_id: adapter_id.to_string(),
                         state: JobState::Failed,
-                        local_duration_ms: local_ref.map(|l| l.duration_ms),
+                        local_duration_ms,
                         remote_upload_ms: Some(upload_duration_ms),
                         remote_compute_ms: None,
                         remote_download_ms: None,
                         remote_total_ms: None,
                         speedup: None,
-                        local_sha256: local_ref.map(|l| l.output_sha256.clone()),
+                        local_sha256: local_sha256.map(|s| s.to_string()),
                         remote_sha256: None,
                         outputs_match: false,
                         records_processed: 0,
@@ -141,15 +165,15 @@ impl RemoteJobClient {
                 MessageKind::Cancelled => {
                     return Ok(JobExecutionResult {
                         job_id,
-                        adapter_id: ADAPTER_ID.to_string(),
+                        adapter_id: adapter_id.to_string(),
                         state: JobState::Cancelled,
-                        local_duration_ms: local_ref.map(|l| l.duration_ms),
+                        local_duration_ms,
                         remote_upload_ms: Some(upload_duration_ms),
                         remote_compute_ms: None,
                         remote_download_ms: None,
                         remote_total_ms: None,
                         speedup: None,
-                        local_sha256: local_ref.map(|l| l.output_sha256.clone()),
+                        local_sha256: local_sha256.map(|s| s.to_string()),
                         remote_sha256: None,
                         outputs_match: false,
                         records_processed: 0,
@@ -164,45 +188,33 @@ impl RemoteJobClient {
 
         let remote_total_ms = t_total_start.elapsed().as_secs_f64() * 1000.0;
 
-        let local_sha256 = local_ref.map(|l| l.output_sha256.clone());
-        let outputs_match = match (&local_sha256, &remote_sha256) {
+        let outputs_match = match (local_sha256, &remote_sha256) {
             (Some(l), Some(r)) => l == r,
             _ => true,
         };
 
         let mut res = JobExecutionResult {
             job_id,
-            adapter_id: ADAPTER_ID.to_string(),
+            adapter_id: adapter_id.to_string(),
             state: if outputs_match { JobState::Succeeded } else { JobState::Failed },
-            local_duration_ms: local_ref.map(|l| l.duration_ms),
+            local_duration_ms,
             remote_upload_ms: Some(upload_duration_ms),
             remote_compute_ms,
             remote_download_ms: Some(download_duration_ms),
             remote_total_ms: Some(remote_total_ms),
             speedup: None,
-            local_sha256,
+            local_sha256: local_sha256.map(|s| s.to_string()),
             remote_sha256,
             outputs_match,
             records_processed,
-            error_message: if !outputs_match {
-                Some("Output SHA-256 mismatch between local and remote!".into())
-            } else {
+            error_message: if outputs_match {
                 None
+            } else {
+                Some("Output SHA-256 verification mismatch between host and worker".into())
             },
         };
 
         res.calculate_speedup();
         Ok(res)
-    }
-
-    /// Cancel a running job.
-    pub async fn cancel_job(
-        stream: &mut TcpStream,
-        job_id: &str,
-        reason: &str,
-    ) -> Result<(), PocketBridgeError> {
-        let env = Envelope::cancel_job(job_id, reason);
-        write_envelope(stream, &env).await?;
-        Ok(())
     }
 }

@@ -11,17 +11,29 @@ use anyhow::Result;
 pub enum Commands {
     /// Launch the interactive TUI dashboard (default)
     Tui,
-    /// Execute a compute workload (chunk_transform.v1) locally and/or remotely
+    /// Execute a compute workload (chunk_transform, image_batch, data_analytics) locally and/or remotely
     Run {
-        /// Number of records to transform
+        /// Workload adapter: chunk_transform (default), image_batch, data_analytics
+        #[arg(short = 'a', long, default_value = "chunk_transform")]
+        adapter: String,
+        /// Number of records or images to process
         #[arg(short, long, default_value_t = 50_000)]
         records: u32,
-        /// Number of mathematical rounds per record
+        /// Number of mathematical rounds per record (for chunk_transform)
         #[arg(short = 'm', long, default_value_t = 20)]
         rounds: u32,
         /// PRNG seed for reproducible data generation
         #[arg(short, long, default_value_t = 0x123456789ABCDEF0)]
         seed: u64,
+        /// Image processing operation (for image_batch: grayscale_invert, box_blur_3x3, downscale_half)
+        #[arg(long, default_value = "grayscale_invert")]
+        operation: String,
+        /// Image width (for image_batch)
+        #[arg(long, default_value_t = 256)]
+        width: u32,
+        /// Image height (for image_batch)
+        #[arg(long, default_value_t = 256)]
+        height: u32,
         /// Execute only on the local Linux host
         #[arg(long, default_value_t = false)]
         local_only: bool,
@@ -82,8 +94,35 @@ pub enum Commands {
 pub async fn handle_command(cmd: Commands) -> Result<()> {
     match cmd {
         Commands::Tui => crate::tui::run().await,
-        Commands::Run { records, rounds, seed, local_only, remote_only, host_load, margin, port } => {
-            run::execute(records, rounds, seed, local_only, remote_only, host_load, margin, port).await
+        Commands::Run {
+            adapter,
+            records,
+            rounds,
+            seed,
+            operation,
+            width,
+            height,
+            local_only,
+            remote_only,
+            host_load,
+            margin,
+            port,
+        } => {
+            run::execute(
+                &adapter,
+                records,
+                rounds,
+                seed,
+                &operation,
+                width,
+                height,
+                local_only,
+                remote_only,
+                host_load,
+                margin,
+                port,
+            )
+            .await
         }
         Commands::Plan { records, rounds, host_load, margin, port } => {
             plan::run(records, rounds, host_load, margin, port).await
