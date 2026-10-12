@@ -113,6 +113,12 @@ cargo test --workspace
 
 ---
 
+## 👤 Author
+
+**Vijay Govind Biju** — [@vijaygovindBiju](https://github.com/vijaygovindBiju)
+
+---
+
 ## 📄 License
 
 This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
