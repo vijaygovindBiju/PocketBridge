@@ -1,0 +1,26 @@
+# Rust
+host/target/
+**/*.rs.bk
+
+# Android & Gradle
+worker-android/.gradle/
+worker-android/build/
+worker-android/*/build/
+worker-android/local.properties
+worker-android/.idea/
+worker-android/*.iml
+worker-android/*/*.iml
+worker-android/captures/
+worker-android/.externalNativeBuild/
+worker-android/.cxx/
+
+# OS and Editor files
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.vscode/
+
+# Benchmark output data (keep folder via .gitkeep)
+benchmarks/results/*.json
+!benchmarks/results/.gitkeep

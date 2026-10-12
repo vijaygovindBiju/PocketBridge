@@ -1,0 +1,20 @@
+[package]
+name = "pocketbridge-host"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "pocketbridge"
+path = "src/main.rs"
+
+[dependencies]
+pocketbridge-core = { path = "../pocketbridge-core" }
+tokio = { version = "1", features = ["full"] }
+clap = { version = "4.5", features = ["derive"] }
+ratatui = "0.29"
+crossterm = "0.28"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+serde_json = "1.0"
+chrono = "0.4"
