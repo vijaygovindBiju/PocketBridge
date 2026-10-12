@@ -45,6 +45,86 @@ This document outlines the core architectural rules, engineering standards, and 
 
 ---
 
+## 📁 Repository & File Structure Rules
+
+PocketBridge strictly adheres to a modular, separated architecture. All contributions must place files in their designated domains according to the following layout:
+
+```text
+PocketBridge/
+├── README.md                 # 30-second overview, architecture overview, quickstart
+├── RULES.md                  # Authoritative architectural rules, structure, and git hygiene
+├── PHASES.md                 # Phase-by-phase implementation progress & roadmap tracker
+├── LICENSE                   # Open-source MIT license
+├── CONTRIBUTING.md            # Contribution workflow and guidelines
+├── SECURITY.md               # Security policy, threat model, and vulnerability reporting
+├── .gitignore                # Rust target, Android build, Gradle, and local SDK artifacts
+│
+├── host/                     # Rust Multi-Crate Workspace
+│   ├── Cargo.toml            # Workspace manifest definition
+│   ├── pocketbridge-core/    # PURE ENGINE: wire protocol, framing, profiler, adapters, tests
+│   │   ├── Cargo.toml
+│   │   ├── src/
+│   │   │   ├── protocol/     # Envelope models, message framing (FramedSocket), validation
+│   │   │   ├── profiler/     # Host Linux hardware metrics (/proc/meminfo, CPU, uname)
+│   │   │   ├── adapter/      # Offloadable workload adapters (e.g. chunk_transform.rs)
+│   │   │   ├── runner/       # Benchmark suite and latency/throughput measurement
+│   │   │   └── client/       # Remote worker client and ADB tunnel connector
+│   │   └── tests/            # Mock TCP integration and unit tests
+│   │
+│   └── pocketbridge-host/    # USER PRESENTATION: CLI binary and interactive Ratatui TUI
+│       ├── Cargo.toml
+│       └── src/
+│           ├── main.rs       # CLI entrypoint and subcommand dispatcher
+│           ├── app.rs        # Interactive application state machine
+│           └── ui.rs         # Ratatui terminal UI rendering and layout components
+│
+├── worker-android/           # Native Android Kotlin Application
+│   ├── build.gradle.kts      # Root Android build configuration
+│   ├── gradle.properties     # JVM network flags and SDK settings
+│   └── app/
+│       ├── build.gradle.kts  # Jetpack Compose and coroutine dependencies
+│       └── src/main/
+│           ├── AndroidManifest.xml # Permissions (Foreground service, wake lock)
+│           └── java/com/pocketbridge/worker/
+│               ├── MainActivity.kt # Jetpack Compose UI container
+│               ├── service/        # WorkerService foreground daemon running TCP server
+│               ├── runtime/        # Kotlin compute engines (ChunkTransformEngine.kt)
+│               ├── model/          # Wire protocol data classes matching Rust envelopes
+│               ├── profiler/       # Android device metrics (ActivityManager, BatteryManager)
+│               └── ui/             # Compose theme, screens, and viewmodels
+│
+├── docs/                     # In-Depth Engineering Documentation
+│   ├── PROJECT.md            # Vision, scope boundaries, and non-goals
+│   ├── ARCHITECTURE.md       # Component architecture, transport layer, failure modes
+│   ├── PROTOCOL.md           # Wire protocol schemas, frame headers, and error codes
+│   ├── ROADMAP.md            # Long-term multi-phase roadmap
+│   ├── PHASES.md             # Completed vs. upcoming phase deliverables tracker
+│   ├── DECISIONS.md          # Architecture Decision Records (ADRs)
+│   └── EXPERIMENTS.md        # Benchmark methodology and empirical results
+│
+├── benchmarks/results/       # Empirical benchmark JSON outputs and performance logs
+└── .github/workflows/        # CI/CD Workflows
+    └── ci.yml                # Automated GitHub Actions (Rust tests + Android Gradle check)
+```
+
+### Directory Placement Constraints
+
+1. **Separation of Core vs. Presentation:**
+   - `pocketbridge-core` **must never** import terminal UI libraries (`ratatui`, `crossterm`). It must remain a reusable library capable of running headless or being embedded into background daemons.
+   - All interactive terminal code and CLI argument parsing belongs strictly in `pocketbridge-host`.
+
+2. **Workload Adapter Symmetry:**
+   - Any new offloadable workload must implement matching symmetric logic in both:
+     - Rust: `host/pocketbridge-core/src/adapter/<adapter_name>.rs`
+     - Android: `worker-android/app/src/main/java/com/pocketbridge/worker/runtime/<AdapterName>Engine.kt`
+   - Both implementations must pass deterministic cross-platform bit-equivalence tests.
+
+3. **Documentation Integrity:**
+   - If protocol framing or message types change, update `docs/PROTOCOL.md` and `docs/ARCHITECTURE.md` in the exact same commit.
+   - Milestone progress must be updated in `PHASES.md`.
+
+---
+
 ## 🌿 Git & Commit Standards
 
 1. **Commit at Necessary Checkpoints:**
@@ -60,3 +140,4 @@ This document outlines the core architectural rules, engineering standards, and 
 
 3. **Keep the Tree Clean:**
    - Never commit generated build artifacts (`host/target/`, `worker-android/**/build/`, `.gradle/`, `local.properties`).
+
