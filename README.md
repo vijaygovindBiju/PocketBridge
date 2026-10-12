@@ -61,12 +61,14 @@ cargo run --release
 # Or use CLI subcommands
 cargo run --release -- profile   # Inspect host & phone hardware
 cargo run --release -- connect   # Handshake with worker
+cargo run --release -- run       # Offload & benchmark compute task (chunk_transform.v1)
 cargo run --release -- bench     # Run link latency & throughput benchmarks
 ```
 
 #### TUI Keybindings
 - `[1]` / `[2]` / `[3]` or `[Tab]` — Switch between Dashboard, Benchmark, and Profile tabs
 - `[c]` — Connect / Handshake with phone worker
+- `[j]` — Offload & run compute workload on phone with live speedup calculation
 - `[d]` — Disconnect
 - `[r]` — Refresh device hardware profiles
 - `[Enter]` — Start benchmark suite (in Benchmark tab)

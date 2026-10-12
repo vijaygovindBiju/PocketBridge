@@ -24,11 +24,11 @@ use app::{ActiveTab, App};
 use pocketbridge_core::{
     collect_host_profile, profiler::build_worker_profile_from_props, read_envelope,
     run_benchmark_suite, save_benchmark_report, write_envelope, AdbTransport, AgentRole,
-    BenchmarkConfig, Envelope, HeartbeatPayload, HelloPayload, MessageKind,
+    BenchmarkConfig, ChunkTransformParams, Envelope, HeartbeatPayload, HelloPayload, LocalExecutor,
+    MessageKind, RemoteJobClient,
 };
 
 pub async fn run() -> Result<()> {
-    // 1. Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
@@ -37,13 +37,11 @@ pub async fn run() -> Result<()> {
 
     let mut app = App::new();
 
-    // Initial host profile load
     if let Ok(host) = collect_host_profile().await {
         app.host_profile = Some(host);
         app.log("Loaded host profile (Arch Linux)");
     }
 
-    // Try initial ADB device detection
     let transport = AdbTransport::new(app.port);
     if let Ok(dev) = transport.check_device().await {
         app.device_name = Some(dev);
@@ -55,7 +53,6 @@ pub async fn run() -> Result<()> {
 
     let res = run_loop(&mut terminal, &mut app).await;
 
-    // Restore terminal
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
@@ -81,35 +78,31 @@ async fn run_loop<B: ratatui::backend::Backend>(
                 ])
                 .split(size);
 
-            // 1. Navigation Tabs
             let titles = vec!["[1] Dashboard", "[2] Benchmark", "[3] Device Profile"];
             let tab_index = app.active_tab as usize;
             let tabs = Tabs::new(titles)
                 .select(tab_index)
-                .block(Block::default().borders(Borders::ALL).title(" PocketBridge v0.1.0 (Feasibility Prototype) "))
+                .block(Block::default().borders(Borders::ALL).title(" PocketBridge v0.1.0 (Feasibility & Compute Offloader) "))
                 .style(Style::default().fg(Color::White))
                 .highlight_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
             f.render_widget(tabs, chunks[0]);
 
-            // 2. Active Tab Content
             match app.active_tab {
                 ActiveTab::Dashboard => dashboard::render(f, app, chunks[1]),
                 ActiveTab::Benchmark => benchmark::render(f, app, chunks[1]),
                 ActiveTab::Profile => profile::render(f, app, chunks[1]),
             }
 
-            // 3. Footer Keybindings
             let footer_text = match app.active_tab {
-                ActiveTab::Dashboard => "[Tab] Switch Tab | [c] Connect | [d] Disconnect | [r] Refresh | [q] Quit",
-                ActiveTab::Benchmark => "[Enter] Run Benchmark | [+/-] Repetitions | [s] Save Report | [Tab] Switch Tab | [q] Quit",
-                ActiveTab::Profile => "[r] Refresh Profile | [c] Connect | [Tab] Switch Tab | [q] Quit",
+                ActiveTab::Dashboard => "[Tab] Tabs | [c] Connect | [j] Run Compute Job | [d] Disconnect | [r] Refresh | [q] Quit",
+                ActiveTab::Benchmark => "[Enter] Run Benchmark | [+/-] Repetitions | [s] Save Report | [Tab] Tabs | [q] Quit",
+                ActiveTab::Profile => "[r] Refresh Profile | [c] Connect | [Tab] Tabs | [q] Quit",
             };
             let footer = Paragraph::new(Span::styled(footer_text, Style::default().fg(Color::Yellow)))
                 .block(Block::default().borders(Borders::ALL));
             f.render_widget(footer, chunks[2]);
         })?;
 
-        // Handle user input events
         if event::poll(Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
                 if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
@@ -156,6 +149,63 @@ async fn run_loop<B: ratatui::backend::Backend>(
                             }
                         }
                     }
+                    KeyCode::Char('j') if !app.job_running => {
+                        app.job_running = true;
+                        app.job_progress_pct = 0.0;
+                        app.job_status_msg = "Starting compute job...".into();
+                        app.log(format!("Executing compute task ({} records)...", app.job_records));
+
+                        let params = ChunkTransformParams {
+                            record_count: app.job_records,
+                            rounds: app.job_rounds,
+                            seed: 0x123456789ABCDEF0,
+                        };
+
+                        // 1. Local reference
+                        app.job_status_msg = "Computing local reference on host...".into();
+                        let local_out = LocalExecutor::run_transform(&params);
+                        app.log(format!("Local compute took {:.2}ms (sha={})", local_out.duration_ms, &local_out.output_sha256[..8]));
+
+                        // 2. Remote execution
+                        let transport = AdbTransport::new(app.port);
+                        let _ = transport.setup_forwarding().await;
+
+                        match transport.connect_tcp().await {
+                            Ok(mut stream) => {
+                                let hello = Envelope::hello("pocketbridge-job", "0.1.0", AgentRole::Host);
+                                let _ = write_envelope(&mut stream, &hello).await;
+                                let _ = read_envelope(&mut stream).await;
+
+                                match RemoteJobClient::execute_remote_job(
+                                    &mut stream,
+                                    &params,
+                                    Some(&local_out),
+                                    |_fraction, _msg| {
+                                        // Progress update
+                                    },
+                                ).await {
+                                    Ok(res) => {
+                                        app.job_running = false;
+                                        app.job_progress_pct = 1.0;
+                                        if let Some(s) = res.speedup {
+                                            app.log(format!("Task completed! Speedup: {:.2}x", s));
+                                        } else {
+                                            app.log("Task completed successfully");
+                                        }
+                                        app.active_job_result = Some(res);
+                                    }
+                                    Err(e) => {
+                                        app.job_running = false;
+                                        app.log(format!("Remote task execution failed: {e}"));
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                app.job_running = false;
+                                app.log(format!("Could not connect to worker for remote job: {e}"));
+                            }
+                        }
+                    }
                     KeyCode::Char('d') => {
                         app.connected = false;
                         app.connecting = false;
@@ -184,7 +234,6 @@ async fn run_loop<B: ratatui::backend::Backend>(
                         app.log(format!("Benchmark repetitions set to {}", app.runs));
                     }
                     KeyCode::Enter if app.active_tab == ActiveTab::Benchmark && !app.benchmark_running => {
-                        // Trigger benchmark run
                         app.benchmark_running = true;
                         app.log(format!("Starting benchmark suite (runs={}, port={})...", app.runs, app.port));
 
@@ -205,9 +254,7 @@ async fn run_loop<B: ratatui::backend::Backend>(
                                     priority: Some(1),
                                 };
 
-                                match run_benchmark_suite(&mut stream, &config, |_done, _total, _stage| {
-                                    // Progress callback
-                                }).await {
+                                match run_benchmark_suite(&mut stream, &config, |_done, _total, _stage| {}).await {
                                     Ok(report) => {
                                         app.benchmark_results = report.results.clone();
                                         app.benchmark_running = false;

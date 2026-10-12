@@ -33,4 +33,15 @@ object MessageKind {
     const val BENCHMARK_ECHO = "BENCHMARK_ECHO"
     const val BENCHMARK_ECHO_REPLY = "BENCHMARK_ECHO_REPLY"
     const val GOODBYE = "GOODBYE"
+
+    // Job Lifecycle Kinds
+    const val SUBMIT_JOB = "SUBMIT_JOB"
+    const val JOB_ACCEPTED = "JOB_ACCEPTED"
+    const val JOB_REJECTED = "JOB_REJECTED"
+    const val JOB_STARTED = "JOB_STARTED"
+    const val JOB_PROGRESS = "JOB_PROGRESS"
+    const val CANCEL_JOB = "CANCEL_JOB"
+    const val CANCELLED = "CANCELLED"
+    const val RESULT_MANIFEST = "RESULT_MANIFEST"
+    const val JOB_ERROR = "JOB_ERROR"
 }

@@ -1,5 +1,5 @@
 use pocketbridge_core::{
-    DeviceProfile, HeartbeatPayload, HelloPayload, PayloadSizeResult,
+    DeviceProfile, HeartbeatPayload, HelloPayload, JobExecutionResult, PayloadSizeResult,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,6 +33,14 @@ pub struct App {
     pub benchmark_results: Vec<PayloadSizeResult>,
     pub last_saved_report: Option<String>,
 
+    // Job execution state (Phase 1 & 2)
+    pub job_running: bool,
+    pub job_records: u32,
+    pub job_rounds: u32,
+    pub job_progress_pct: f32,
+    pub job_status_msg: String,
+    pub active_job_result: Option<JobExecutionResult>,
+
     // Activity logs
     pub logs: Vec<String>,
 }
@@ -60,7 +68,14 @@ impl App {
             benchmark_results: Vec::new(),
             last_saved_report: None,
 
-            logs: vec!["PocketBridge initialized. Press 'c' to connect to phone.".into()],
+            job_running: false,
+            job_records: 50_000,
+            job_rounds: 20,
+            job_progress_pct: 0.0,
+            job_status_msg: "Press 'j' to run compute job".into(),
+            active_job_result: None,
+
+            logs: vec!["PocketBridge initialized. Press 'c' to connect, 'j' to offload compute job.".into()],
         }
     }
 
