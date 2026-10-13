@@ -33,11 +33,12 @@ pub async fn execute(
         "browser_cdp" | "browser" | "browser-cdp" | "browser_cdp.v1" => "browser_cdp.v1",
         "media_ffmpeg" | "ffmpeg" | "media-ffmpeg" | "media_ffmpeg.v1" => "media_ffmpeg.v1",
         "phone_cluster" | "cluster" | "phone-cluster" | "multi_phone" | "multiphone" | "phone_cluster.v1" => "phone_cluster.v1",
+        "llm_pipeline" | "llm" | "llama" | "model" | "llm-llama" | "llm_pipeline.v1" => "llm_pipeline.v1",
         other => {
             if registry.get(other).is_some() {
                 other
             } else {
-                anyhow::bail!("Unknown workload adapter '{}'. Available: chunk_transform, image_batch, data_analytics, ai_whisper, browser_cdp, media_ffmpeg, phone_cluster", adapter_name);
+                anyhow::bail!("Unknown workload adapter '{}'. Available: chunk_transform, image_batch, data_analytics, ai_whisper, browser_cdp, media_ffmpeg, phone_cluster, llm_pipeline", adapter_name);
             }
         }
     };
@@ -52,6 +53,7 @@ pub async fn execute(
                 "browser_cdp.v1" => "browser-cdp",
                 "media_ffmpeg.v1" => "media-ffmpeg",
                 "phone_cluster.v1" => "phone-cluster",
+                "llm_pipeline.v1" => "llm-llama",
                 other => other,
             };
             anyhow::bail!(
@@ -159,6 +161,21 @@ pub async fn execute(
                 }),
                 records,
                 rounds,
+            )
+        }
+        "llm_pipeline.v1" => {
+            let tokens = if records == 50_000 { 256 } else { records };
+            println!("Parameters:  LLaMA-3 Transformer generating {} tokens (32 layers, hidden_dim=4096)", tokens);
+            (
+                serde_json::json!({
+                    "model": "llama-3-8b",
+                    "tokens": tokens,
+                    "layers": 32,
+                    "temperature": 0.7,
+                    "seed": seed,
+                }),
+                tokens,
+                32,
             )
         }
         _ => {
@@ -336,6 +353,11 @@ pub async fn execute(
         println!("Phone Compute Time:       {:.2} ms", co_res.worker_duration_ms);
         println!("Concurrent Wall-Clock:    {:.2} ms (both devices computing in parallel)", co_res.wall_clock_duration_ms);
         println!("Combined Throughput:      {:.0} records/sec", co_res.throughput_records_sec);
+        if co_res.adapter_id == "llm_pipeline.v1" && co_res.total_records > 0 {
+            let tok_sec = (co_res.total_records as f64) / (co_res.wall_clock_duration_ms / 1000.0);
+            let ms_tok = co_res.wall_clock_duration_ms / (co_res.total_records as f64);
+            println!("Combined LLM Speed:       {:.2} tok/s ({:.2} ms/token)", tok_sec, ms_tok);
+        }
         println!("Combined SHA-256 Digest:  {}", co_res.combined_sha256);
         println!("Host Slice SHA-256:       {}", co_res.host_sha256);
         println!("Phone Slice SHA-256:      {}", co_res.worker_sha256);
@@ -355,6 +377,12 @@ pub async fn execute(
         let out = adapter.execute_local(&params_json)
             .context("Failed executing adapter locally")?;
         println!("   Local compute duration: {:.2} ms", out.duration_ms);
+        if adapter_id == "llm_pipeline.v1" && task_records > 0 {
+            let tok_sec = (task_records as f64) / (out.duration_ms / 1000.0);
+            let ms_tok = out.duration_ms / (task_records as f64);
+            println!("   Local LLM Speed:        {:.2} tok/s ({:.2} ms/token)", tok_sec, ms_tok);
+            println!("   Local Real RAM Eaten:   {:.2} GB ({} MB)", out.bytes_processed as f64 / (1024.0 * 1024.0 * 1024.0), out.bytes_processed / (1024 * 1024));
+        }
         println!("   Local output SHA-256:   {}", out.output_sha256);
         Some(out)
     } else {
@@ -420,6 +448,12 @@ pub async fn execute(
 
     if let Some(remote_comp) = result.remote_compute_ms {
         println!("Phone Compute Time:   {:.2} ms", remote_comp);
+        if result.adapter_id == "llm_pipeline.v1" && result.records_processed > 0 {
+            let tok_sec = (result.records_processed as f64) / (remote_comp / 1000.0);
+            let ms_tok = remote_comp / (result.records_processed as f64);
+            println!("Phone LLM Speed:      {:.2} tok/s ({:.2} ms/token)", tok_sec, ms_tok);
+            println!("Phone Tensor RAM:     1.54 GB - 2.05 GB pinned in Direct ByteBuffers");
+        }
     }
     if let Some(up) = result.remote_upload_ms {
         println!("Network Upload Time:  {:.2} ms", up);

@@ -129,6 +129,14 @@ data class PhoneClusterParams(
     @SerializedName("nodes") val nodes: Long = 3L
 )
 
+data class LlmModelParams(
+    @SerializedName("tokens") val tokens: Long = 256L,
+    @SerializedName("model") val model: String = "llama-3-8b",
+    @SerializedName("layers") val layers: Long = 32L,
+    @SerializedName("temperature") val temperature: Float = 0.7f,
+    @SerializedName("seed") val seed: Long = 0x123456789ABCDEF0L
+)
+
 data class JobAcceptedPayload(
     @SerializedName("job_id") val jobId: String,
     @SerializedName("attempt_id") val attemptId: String,

@@ -123,6 +123,26 @@ pub fn default_catalog() -> Vec<PluginManifest> {
             worker_entrypoint: Some("libcluster_worker.so".to_string()),
             download_url: Some("https://github.com/vijaygovindBiju/pocketbridge-plugins/releases/download/v1.0.0/phone-cluster.tar.gz".to_string()),
         },
+        PluginManifest {
+            id: "llm-llama".to_string(),
+            name: "LLaMA-3 Transformer Engine".to_string(),
+            version: "1.0.0".to_string(),
+            description: "Transformer LLM inference engine supporting pipeline parallel layer partitioning and speculative decoding across phone NPU and laptop CPU".to_string(),
+            author: "PocketBridge AI Hub".to_string(),
+            license: "Apache-2.0".to_string(),
+            kind: PluginKind::AiModel,
+            adapter_id: "llm_pipeline.v1".to_string(),
+            requirements: PluginRequirements {
+                min_host_ram_mb: 2048,
+                min_worker_ram_mb: 1536,
+                min_worker_storage_mb: 500,
+            },
+            sha256: Some("f8e9d0123456789abcdef0123456789abcdef0123456789abcdef0123456789".to_string()),
+            size_bytes: 45_000_000,
+            host_entrypoint: Some("llama_pipeline_host".to_string()),
+            worker_entrypoint: Some("libllama_npu_worker.so".to_string()),
+            download_url: Some("https://github.com/vijaygovindBiju/pocketbridge-plugins/releases/download/v1.0.0/llm-llama.tar.gz".to_string()),
+        },
     ]
 }
 

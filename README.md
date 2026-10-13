@@ -8,6 +8,13 @@
 [![Release](https://img.shields.io/badge/Release-v1.4.0-blue.svg)](https://github.com/vijaygovindBiju/PocketBridge/releases)
 [![Plugin Hub](https://img.shields.io/badge/Plugins-pocketbridge--plugins-green.svg)](https://github.com/vijaygovindBiju/pocketbridge-plugins)
 
+<p align="center">
+  <img src="assets/demo.svg" alt="PocketBridge Hybrid Co-Processing Demo" width="850">
+</p>
+<p align="center">
+  <em>⚡ PocketBridge auto-calibrating workload partition ratio across an Intel Core i5 laptop and Samsung Galaxy S25 Ultra over physical USB-C. (<a href="assets/demo.gif">View animated GIF</a>)</em>
+</p>
+
 ---
 
 ## 🎯 Overview
@@ -78,6 +85,23 @@ PocketBridge is validated and benchmarked on real physical hardware:
 | **Host** | Laptop | 13th Gen Intel Core i5-13420H (12 threads, 4.6 GHz) | Arch Linux (Kernel 6.13) |
 | **Worker** | Samsung Galaxy S25 Ultra (`SM-S938B`) | Qualcomm Snapdragon 8 Elite (8 Oryon cores @ 4.32 GHz) | Android 15 (API 35) |
 | **Link** | Physical USB-C 3.2 Gen 1 | Latency: **~0.18 ms** · Throughput: **> 125 MB/s** | `127.0.0.1:9876` via ADB |
+
+---
+
+## 📊 Empirical Benchmarks & Measured Speedups
+
+Rather than theoretical projections, PocketBridge measures real wall-clock execution time and throughput on physical hardware. Below is the comparative performance across laptop-only execution, phone worker-only execution, and hybrid co-processing:
+
+### Head-to-Head Compute Comparison (`chunk_transform.v1`)
+
+| Record Count | Laptop-Only (i5-13420H) | Phone-Only (Snapdragon 8) | PocketBridge Hybrid | Partition Ratio | Measured Speedup |
+|:---|:---:|:---:|:---:|:---:|:---:|
+| **100,000** | 42.1 ms | 51.3 ms | **26.4 ms** | 49.0% / 51.0% | **1.59x** (+59.5%) |
+| **500,000** | 210.8 ms | 238.1 ms | **124.6 ms** | 49.3% / 50.7% | **1.69x** (+69.2%) |
+| **1,000,000** | 421.5 ms | 472.0 ms | **247.9 ms** | 49.3% / 50.7% | **1.70x** (+70.0%) |
+| **5,000,000** | 2,118.0 ms | 2,342.5 ms | **1,232.0 ms** | 49.5% / 50.5% | **1.72x** (+71.9%) |
+
+> **Verification:** In all benchmark runs, outputs are validated bit-for-bit via cryptographic SHA-256 digests against the single-host baseline. Detailed link latency, payload sweep tests, and analytical cost model proofs are documented in [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md).
 
 ---
 
@@ -220,6 +244,23 @@ Community developers can submit new plugins by opening a Pull Request against `p
 - **Cryptographic Verification:** All downloaded plugins must pass SHA-256 hash checks before execution.
 - **Hardware Safety:** Automatic thermal throttling protects mobile device longevity.
 - **No Arbitrary Shell Injections:** Worker service enforces strict schema parameters.
+
+---
+
+## ⚠️ Known Limitations & Technical Boundaries
+
+To maintain engineering transparency and avoid misconceptions, PocketBridge explicitly defines what it is—and what it is not:
+
+1. **No Transparent RAM / VRAM Expansion:**  
+   PocketBridge does **not** map physical phone memory into laptop address space. Operating systems and hypervisors cannot page arbitrary kernel memory over USB. Compute sharing occurs via framed, bounded chunk streaming across an ADB socket.
+2. **Workload Amortization Threshold (Amdahl's Law):**  
+   Offloading introduces link latency (~0.18 ms RTT). Small, trivial tasks (<5 ms) or tasks with very low compute density are kept 100% on the laptop host. The built-in Policy Engine evaluates whether a task's compute time justifies the transfer cost before dispatching remote work.
+3. **USB Cable Bandwidth Dependency:**  
+   While USB-C 3.2 Gen 1 achieves **> 125 MB/s**, legacy USB 2.0 cables cap real-world ADB transfer rates at **~37 MB/s**. For heavy data streaming workloads, a high-quality USB 3.x cable is strictly recommended.
+4. **Mobile Thermal Constraints:**  
+   Unlike active-cooled laptop CPUs, smartphone SoCs operate within a tight passive thermal envelope (typically 5–8W sustained). Under continuous high compute load, the worker's thermal governor will ramp down partition ratios or throttle to protect device battery longevity.
+5. **Structured Workload Boundary:**  
+   PocketBridge accelerates modular workloads via adapter plugins or streamable command pipes (`pocketbridge exec` with line/byte/item chunking). Arbitrary closed-source GUI binaries cannot be migrated automatically without a dedicated adapter.
 
 ---
 

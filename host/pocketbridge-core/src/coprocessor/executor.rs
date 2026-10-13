@@ -119,11 +119,29 @@ impl CoProcessor {
                 let p: crate::adapter::DataAnalyticsParams = serde_json::from_value(host_params)?;
                 p.record_count as u64
             }
+            "llm_pipeline.v1" => {
+                host_params.get("tokens").and_then(|v| v.as_u64()).unwrap_or(256)
+            }
+            "ai_whisper.v1" => {
+                host_params.get("samples_count").and_then(|v| v.as_u64()).unwrap_or(160_000)
+            }
+            "media_ffmpeg.v1" => {
+                host_params.get("frame_count").and_then(|v| v.as_u64()).unwrap_or(600)
+            }
+            "browser_cdp.v1" => {
+                host_params.get("total_tabs").and_then(|v| v.as_u64()).unwrap_or(12)
+            }
+            "phone_cluster.v1" => {
+                host_params.get("records").and_then(|v| v.as_u64()).unwrap_or(100_000)
+            }
             _ => 1,
         };
 
         let worker_records = worker_exec_result.records_processed;
-        let total_records = host_records + worker_records;
+        let total_records = match adapter_id {
+            "llm_pipeline.v1" => host_records,
+            _ => host_records + worker_records,
+        };
 
         // Effective standalone host time estimate = host_duration / host_ratio
         let host_standalone_estimate = if host_ratio > 0.0 {

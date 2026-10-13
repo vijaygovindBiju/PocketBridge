@@ -260,6 +260,27 @@ pub fn partition_workload(
             }
             Ok((host_p, worker_p))
         }
+        "llm_pipeline.v1" => {
+            let total_layers = params.get("layers")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(32);
+            let host_layers = ((total_layers as f64) * ratio).round().clamp(1.0, (total_layers - 1) as f64) as u64;
+            let worker_layers = total_layers.saturating_sub(host_layers);
+
+            let mut host_p = params.clone();
+            let mut worker_p = params.clone();
+            if let Some(obj) = host_p.as_object_mut() {
+                obj.insert("layers".to_string(), serde_json::json!(host_layers));
+                obj.insert("layer_start".to_string(), serde_json::json!(0));
+                obj.insert("layer_end".to_string(), serde_json::json!(host_layers));
+            }
+            if let Some(obj) = worker_p.as_object_mut() {
+                obj.insert("layers".to_string(), serde_json::json!(worker_layers));
+                obj.insert("layer_start".to_string(), serde_json::json!(host_layers));
+                obj.insert("layer_end".to_string(), serde_json::json!(total_layers));
+            }
+            Ok((host_p, worker_p))
+        }
         _ => Err(PocketBridgeError::AdapterError(format!(
             "Unsupported adapter for hybrid co-processing: {adapter_id}"
         ))),
