@@ -1,5 +1,6 @@
 pub mod bench;
 pub mod connect;
+pub mod exec;
 pub mod fleet;
 pub mod plan;
 pub mod profile;
@@ -117,6 +118,24 @@ pub enum Commands {
         #[arg(short, long, default_value_t = 9876)]
         base_port: u16,
     },
+    /// Universal process partition proxy: divide any command between laptop and phone
+    Exec {
+        /// Partition strategy: line (default), byte, item
+        #[arg(short = 's', long, default_value = "line")]
+        strategy: String,
+        /// Input file to slice and stream
+        #[arg(short = 'i', long)]
+        input_file: Option<String>,
+        /// Explicit host ratio (e.g. 0.6 = 60% host), default: auto-calibrated from device profiles
+        #[arg(long)]
+        host_ratio: Option<f64>,
+        /// Port for ADB forwarding
+        #[arg(short, long, default_value_t = 9876)]
+        port: u16,
+        /// Command and arguments to execute
+        #[arg(last = true, required = true)]
+        command: Vec<String>,
+    },
 }
 
 pub async fn handle_command(cmd: Commands) -> Result<()> {
@@ -170,5 +189,12 @@ pub async fn handle_command(cmd: Commands) -> Result<()> {
             seed,
             base_port,
         } => fleet::run(&adapter, records, chunks, rounds, seed, base_port).await,
+        Commands::Exec {
+            strategy,
+            input_file,
+            host_ratio,
+            port,
+            command,
+        } => exec::run(&command, &strategy, host_ratio, input_file.as_deref(), port).await,
     }
 }

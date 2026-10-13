@@ -8,6 +8,12 @@ pub mod profiler;
 pub mod protocol;
 pub mod scheduler;
 pub mod transport;
+pub mod universal;
+
+pub use universal::{
+    PartitionStrategy, UniversalExecPayload, UniversalExecResult, UniversalPartitionPlan,
+    UniversalPartitioner, UNIVERSAL_ADAPTER_ID,
+};
 
 pub use adapter::{
     execute_chunk_transform, transform_record, AdapterExecutionResult, AdapterRegistry,
