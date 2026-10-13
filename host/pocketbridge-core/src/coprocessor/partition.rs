@@ -242,6 +242,24 @@ pub fn partition_workload(
             }
             Ok((host_p, worker_p))
         }
+        "phone_cluster.v1" => {
+            let total_records = params.get("records")
+                .or_else(|| params.get("record_count"))
+                .and_then(|v| v.as_u64())
+                .unwrap_or(100_000);
+            let host_records = ((total_records as f64) * ratio).round() as u64;
+            let worker_records = total_records.saturating_sub(host_records);
+
+            let mut host_p = params.clone();
+            let mut worker_p = params.clone();
+            if let Some(obj) = host_p.as_object_mut() {
+                obj.insert("records".to_string(), serde_json::json!(host_records));
+            }
+            if let Some(obj) = worker_p.as_object_mut() {
+                obj.insert("records".to_string(), serde_json::json!(worker_records));
+            }
+            Ok((host_p, worker_p))
+        }
         _ => Err(PocketBridgeError::AdapterError(format!(
             "Unsupported adapter for hybrid co-processing: {adapter_id}"
         ))),

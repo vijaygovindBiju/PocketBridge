@@ -123,6 +123,12 @@ data class MediaFfmpegParams(
     @SerializedName("codec") val codec: String = "h264"
 )
 
+data class PhoneClusterParams(
+    @SerializedName("records") val records: Long = 100000L,
+    @SerializedName("chunks_count") val chunksCount: Long = 8L,
+    @SerializedName("nodes") val nodes: Long = 3L
+)
+
 data class JobAcceptedPayload(
     @SerializedName("job_id") val jobId: String,
     @SerializedName("attempt_id") val attemptId: String,

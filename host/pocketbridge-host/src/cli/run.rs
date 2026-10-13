@@ -32,11 +32,12 @@ pub async fn execute(
         "ai_whisper" | "whisper" | "ai-whisper" | "ai_whisper.v1" => "ai_whisper.v1",
         "browser_cdp" | "browser" | "browser-cdp" | "browser_cdp.v1" => "browser_cdp.v1",
         "media_ffmpeg" | "ffmpeg" | "media-ffmpeg" | "media_ffmpeg.v1" => "media_ffmpeg.v1",
+        "phone_cluster" | "cluster" | "phone-cluster" | "multi_phone" | "multiphone" | "phone_cluster.v1" => "phone_cluster.v1",
         other => {
             if registry.get(other).is_some() {
                 other
             } else {
-                anyhow::bail!("Unknown workload adapter '{}'. Available: chunk_transform, image_batch, data_analytics, ai_whisper, browser_cdp, media_ffmpeg", adapter_name);
+                anyhow::bail!("Unknown workload adapter '{}'. Available: chunk_transform, image_batch, data_analytics, ai_whisper, browser_cdp, media_ffmpeg, phone_cluster", adapter_name);
             }
         }
     };
@@ -50,6 +51,7 @@ pub async fn execute(
                 "ai_whisper.v1" => "ai-whisper",
                 "browser_cdp.v1" => "browser-cdp",
                 "media_ffmpeg.v1" => "media-ffmpeg",
+                "phone_cluster.v1" => "phone-cluster",
                 other => other,
             };
             anyhow::bail!(
@@ -144,6 +146,19 @@ pub async fn execute(
                 }),
                 frames,
                 25,
+            )
+        }
+        "phone_cluster.v1" => {
+            println!("Parameters:  Multi-Phone Cluster orchestrating {} records across USB device farm", records);
+            (
+                serde_json::json!({
+                    "records": records,
+                    "chunks_count": 8,
+                    "nodes": 3,
+                    "seed": seed,
+                }),
+                records,
+                rounds,
             )
         }
         _ => {

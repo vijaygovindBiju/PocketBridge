@@ -20,11 +20,12 @@ pub async fn run(
         "chunk_transform" | "chunk" | "chunk_transform.v1" => "chunk_transform.v1",
         "image_batch" | "image" | "image_batch.v1" => "image_batch.v1",
         "data_analytics" | "analytics" | "data_analytics.v1" => "data_analytics.v1",
+        "phone_cluster" | "cluster" | "phone-cluster" | "phone_cluster.v1" => "phone_cluster.v1",
         other => {
             if registry.get(other).is_some() {
                 other
             } else {
-                anyhow::bail!("Unknown workload adapter '{}'. Available: chunk_transform, image_batch, data_analytics", adapter_name);
+                anyhow::bail!("Unknown workload adapter '{}'. Available: chunk_transform, image_batch, data_analytics, phone_cluster", adapter_name);
             }
         }
     };
@@ -35,6 +36,7 @@ pub async fn run(
             let plugin_hint = match adapter_id {
                 "image_batch.v1" => "image-batch",
                 "data_analytics.v1" => "data-analytics",
+                "phone_cluster.v1" => "phone-cluster",
                 other => other,
             };
             anyhow::bail!(

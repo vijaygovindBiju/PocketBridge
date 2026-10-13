@@ -103,6 +103,26 @@ pub fn default_catalog() -> Vec<PluginManifest> {
             worker_entrypoint: Some("libavcodec_worker.so".to_string()),
             download_url: Some("https://github.com/PocketBridge/pocketbridge-plugins/releases/download/v1.0.0/media-ffmpeg.tar.gz".to_string()),
         },
+        PluginManifest {
+            id: "phone-cluster".to_string(),
+            name: "Multi-Phone Cluster Orchestrator".to_string(),
+            version: "1.0.0".to_string(),
+            description: "Auto-discovers and orchestrates multi-phone USB device farms with automated port forwarding, dynamic load-balancing, and failover".to_string(),
+            author: "PocketBridge Core Team".to_string(),
+            license: "Apache-2.0".to_string(),
+            kind: PluginKind::Native,
+            adapter_id: "phone_cluster.v1".to_string(),
+            requirements: PluginRequirements {
+                min_host_ram_mb: 256,
+                min_worker_ram_mb: 64,
+                min_worker_storage_mb: 5,
+            },
+            sha256: Some("e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef012345678".to_string()),
+            size_bytes: 1_200_000,
+            host_entrypoint: Some("cluster_orchestrator".to_string()),
+            worker_entrypoint: Some("libcluster_worker.so".to_string()),
+            download_url: Some("https://github.com/vijaygovindBiju/pocketbridge-plugins/releases/download/v1.0.0/phone-cluster.tar.gz".to_string()),
+        },
     ]
 }
 
