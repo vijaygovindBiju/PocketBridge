@@ -26,3 +26,6 @@ Thumbs.db
 # Benchmark output data (keep folder via .gitkeep)
 benchmarks/results/*.json
 !benchmarks/results/.gitkeep
+
+# Local untracked / sub-repos
+ev/

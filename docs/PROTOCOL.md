@@ -1,104 +1,98 @@
-# Protocol Draft
+# Wire Protocol Specification (v1)
 
-**Status:** Initial proposal; versioning and serialization are not implemented yet.
+## 1. Framing Format
 
-## 1. Goals
+All messages transmitted across the ADB forwarded stream (`127.0.0.1:9876`) use an 8-byte binary framing header followed by a variable-length JSON payload:
 
-The protocol must be small, explicit, versioned, authenticated, stream large inputs safely, and support cancellation and reconnects. It must not depend on a permanent TCP connection being available.
+```text
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                     Payload Length (u32 BE)                   |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|          Magic Byte 0x50 ('P') |          Magic Byte 0x4B ('K') |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|          Magic Byte 0x54 ('T') |          Magic Byte 0x42 ('B') |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                                                               |
+|                 JSON Envelope Payload (Bytes)                 |
+|                                                               |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+```
 
-Recommended starting point: length-prefixed messages over a local authenticated stream, with a compact versioned envelope. JSON is acceptable for the first prototype because it is easy to inspect; benchmark binary payload framing separately rather than embedding large binary data as base64 in JSON. A binary serialization format can be considered once the schema stabilizes.
+- **Payload Length:** 32-bit big-endian integer specifying exact length of JSON envelope in bytes (max 64 MB).
+- **Magic Bytes:** `0x50 0x4B 0x54 0x42` (ASCII `"PKTB"`). Connections with invalid magic headers are immediately rejected.
 
-## 2. Envelope
+---
 
-Every control message should include:
+## 2. Envelope Schema
 
 ```json
 {
-  "protocol_version": 1,
-  "message_id": "unique-message-id",
-  "session_id": "paired-session-id",
-  "kind": "message-kind",
-  "sent_at_unix_ms": 0,
-  "payload": {}
+  "version": 1,
+  "message_id": "c1f7b02e-4b68-45d2-a7f4-8848d1e2e92c",
+  "session_id": "s-8f3e1a0b",
+  "kind": "SUBMIT_JOB",
+  "sent_at_unix_ms": 1728834920150,
+  "payload": { ... }
 }
 ```
 
-This is a schema illustration, not working code. Production code must validate maximum lengths, allowed kinds, missing fields, and version compatibility.
+---
 
-## 3. Initial message kinds
+## 3. Implemented Message Kinds
 
-- `HELLO` — protocol and agent version negotiation.
-- `AUTH_CHALLENGE` / `AUTH_PROOF` — establish an authenticated session.
-- `CAPABILITIES` — report ABI, runtimes, resource budgets, worker policy, and supported adapters.
-- `HEARTBEAT` — report liveness and optional resource summary.
-- `SUBMIT_JOB` — request job creation with an adapter ID and payload manifest.
-- `JOB_ACCEPTED` / `JOB_REJECTED` — confirm acceptance or give a structured reason.
-- `INPUT_CHUNK` / `INPUT_COMPLETE` — stream a bounded input artifact with offset/hash.
-- `JOB_STARTED` / `JOB_PROGRESS` — report execution status.
-- `CANCEL_JOB` / `CANCELLED` — request and confirm cancellation.
-- `RESULT_MANIFEST` / `RESULT_CHUNK` / `RESULT_COMPLETE` — return output artifacts with hashes.
-- `JOB_ERROR` — report a typed failure.
-- `GOODBYE` — close a session cleanly.
+### Connection Lifecycle & Discovery
+- `HELLO` — Initiates connection; negotiates protocol version and agent role (`host` or `worker`).
+- `HEARTBEAT` — Transmitted periodically; reports battery level, charging state, thermal headroom status, and active job count.
+- `GOODBYE` — Graceful connection termination.
 
-## 4. Job contract
+### Job Orchestration
+- `SUBMIT_JOB` — Requests execution of a workload adapter (`adapter_id`, input JSON parameters, limits).
+- `JOB_ACCEPTED` — Worker acknowledges job acceptance with an assigned attempt ID.
+- `JOB_REJECTED` — Worker rejects job (unsupported adapter, insufficient RAM, thermal throttle).
+- `JOB_STARTED` — Worker confirms execution commencement.
+- `JOB_PROGRESS` — Emitted during long-running tasks reporting fractional progress (`0.0` to `1.0`) and elapsed compute duration.
+- `RESULT_MANIFEST` — Final execution result containing output size, compute duration, records processed, and SHA-256 digest.
+- `CANCEL_JOB` — Host requests termination of an active job.
+- `CANCELLED` — Worker confirms cancellation and releases resources/WakeLocks.
+- `JOB_ERROR` — Reports execution or parsing failure.
 
-Example conceptual job request:
+### Link Benchmarking
+- `BENCHMARK_ECHO` — Host sends arbitrary test payload bytes to measure round-trip latency.
+- `BENCHMARK_ECHO_REPLY` — Worker returns echoed bytes immediately with remote timestamp.
 
+---
+
+## 4. Workload Adapter Payloads
+
+### Core Built-in: `chunk_transform.v1`
 ```json
 {
-  "job_id": "uuid",
-  "adapter_id": "example.chunk-transform.v1",
-  "input_manifest": [
-    {"artifact_id":"input-0","size_bytes":1024,"sha256":"..."}
-  ],
-  "requirements": {
-    "architecture": "aarch64",
-    "runtime": "adapter-defined",
-    "min_memory_bytes": 67108864,
-    "max_wall_time_ms": 30000
-  },
-  "limits": {
-    "max_input_bytes": 10485760,
-    "max_output_bytes": 10485760,
-    "max_processes": 1,
-    "network_access": false
-  },
-  "deadline_unix_ms": 0,
-  "idempotent": true,
-  "data_classification": "user-approved"
+  "record_count": 50000,
+  "rounds": 20,
+  "seed": 1311768467294899696
+}
+```
+*Output:* 64-bit record transformations verified via SHA-256 hash.
+
+### Plugins: `image_batch.v1`
+```json
+{
+  "image_count": 100,
+  "width": 256,
+  "height": 256,
+  "seed": 1311768467294899696,
+  "operation": "grayscale_invert"
 }
 ```
 
-All values are illustrative. Use real unique IDs, validate all resource limits on the worker, and do not trust host-side estimates alone. A worker must enforce its own maximum limits because the host can be compromised or buggy.
-
-## 5. Result contract
-
-A result includes:
-- job ID and attempt ID;
-- final state (`succeeded`, `failed`, `cancelled`, `timed_out`);
-- output artifact manifest, size, and cryptographic hash;
-- worker-reported start/end times and metrics;
-- error code and non-sensitive diagnostic summary when applicable;
-- adapter-level result metadata required for validation.
-
-The host should validate hashes, size quotas, schema, and the adapter-specific output invariant before declaring success.
-
-## 6. Idempotency and retries
-
-A network acknowledgement can be lost even when a worker received a job. Use job IDs and attempt IDs, plus a worker-side job table, to prevent accidental duplicate execution. Only retry automatically when the job is idempotent or the adapter provides a deduplication mechanism. Do not assume at-least-once message delivery means exactly-once execution.
-
-## 7. Flow control
-
-- Bound the number of concurrent jobs and transfers.
-- Bound chunk size and total artifact size.
-- Apply backpressure if the worker is receiving faster than it can write or execute.
-- Prefer streaming artifacts over loading entire payloads into memory.
-- Check hashes for transferred artifacts.
-- Support cancellation of transfers and remove partial artifacts after a defined expiry.
-
-## 8. Versioning
-
-- Protocol major version mismatch: refuse session.
-- Unknown optional capability: ignore only if declared optional.
-- Unknown message kind: return a structured unsupported-message error and close if safe parsing cannot continue.
-- Worker advertises an explicit set of adapters and adapter versions; the host must not assume compatibility from a generic version string.
+### Plugins: `data_analytics.v1`
+```json
+{
+  "record_count": 50000,
+  "seed": 1311768467294899696,
+  "filter_min": 0,
+  "filter_max": 9223372036854775807
+}
+```
