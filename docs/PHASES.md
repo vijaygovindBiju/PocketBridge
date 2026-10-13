@@ -268,7 +268,7 @@ flowchart LR
 ### Phase 6 — Multi-Worker Fleet & Fault-Tolerant Mesh
 - **Target Version:** `v0.7.0`
 - **Status:** `COMPLETED & VERIFIED`
-- **Milestone Objective:** Connect multiple Android phones simultaneously via USB hub or local Wi-Fi to form a distributed compute cluster.
+- **Milestone Objective:** Connect multiple Android phones simultaneously via physical USB hub to form a wired distributed compute cluster.
 
 #### Subsystem Mapping
 - `host/pocketbridge-core/src/fleet/manager.rs` — Dynamic ADB device discovery (`adb devices -l`) and per-device port forwarding (`tcp:9876+N`).
