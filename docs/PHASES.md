@@ -384,7 +384,7 @@ To ensure maximum performance in realistic, production environments, PocketBridg
 #### Technical Implementation Details:
 1. **Hybrid Distributed Co-Processing Engine:**
    - Implemented `host/pocketbridge-core/src/coprocessor/partition.rs` and `executor.rs`.
-   - Workloads (`chunk_transform.v1`, `image_batch.v1`, `data_analytics.v1`) dynamically partitioned into Host and Worker slices according to configurable `--host-ratio` (default 50/50).
+   - Workloads (`chunk_transform.v1`, `image_batch.v1`, `data_analytics.v1`) dynamically partitioned into Host and Worker slices according to configurable `--host-ratio` (default auto-calibrated from device profiles).
    - Local CPU and remote Phone Worker compute concurrently via `tokio::join!`, reducing overall wall-clock elapsed time below any single-device baseline.
 2. **Canonical Hash Merging & Reduction:**
    - Produces combined deterministic SHA-256 digest (`SHA256(host_sha256 || "::" || worker_sha256)`).
@@ -395,6 +395,93 @@ To ensure maximum performance in realistic, production environments, PocketBridg
    - [x] Automated unit and mock worker co-processing tests passing (`host/pocketbridge-core/tests/coprocessor_tests.rs`).
    - [x] Partitioning verified across all 3 production adapters.
    - [x] 22/22 workspace tests passing (`cargo test`).
+
+---
+
+### Phase 7 — Universal Process Partitioning & `pocketbridge exec` Transparent Proxy
+- **Target Version:** `v1.1.0`
+- **Status:** `PLANNED`
+- **Milestone Objective:** Enable automatic division of any divide-and-conquer Linux command or process between Laptop and Phone without modifying the application source code.
+
+#### Subsystem Mapping
+- `host/pocketbridge-core/src/universal/partitioner.rs` — Generic `UniversalPartitionable` trait for arbitrary data, stream, and batch chunking.
+- `host/pocketbridge-core/src/universal/interceptor.rs` — Dynamic process argument and standard I/O (stdin/stdout/stderr) interceptor and pipe multiplexer.
+- `host/pocketbridge-host/src/cli/exec.rs` — CLI `pocketbridge exec -- [COMMAND] [ARGS]` transparent wrapper.
+- `worker-android/.../runtime/UniversalBytecodeRunner.kt` — Generic WebAssembly / native shared library runner on Android worker.
+
+#### Detailed Implementation Steps
+1. **Generic Workload Slicing Engine:**
+   - Provide standard chunking strategies:
+     - **File/Byte Slicing:** Splitting raw streams, archives (`tar`/`zstd`), and datasets.
+     - **Line/Record Slicing:** Splitting text, logs, and tabular data.
+     - **Batch Item Slicing:** Splitting lists of input arguments or media file targets.
+2. **Standard I/O & Argument Proxy:**
+   - Wrap Linux binaries (e.g. `ffmpeg`, `gzip`, `ccache`, `imagemagick`).
+   - Automatically route worker chunks to the phone over USB-C, execute the corresponding task in parallel, and merge stdout/stderr streams cleanly.
+3. **Capability-Calibrated Division:**
+   - Use `PartitionConfig::from_device_profiles` to automatically assign chunk ratios based on the specific connected phone's CPU cores, clock speed, and thermal/battery status.
+
+#### Acceptance Criteria
+- [ ] Prepending `pocketbridge exec --` to parallel batch utilities (`ffmpeg`, `zstd`, `convert`) automatically divides workloads between Laptop and Phone.
+- [ ] Output files match bit-for-bit with standard standalone execution.
+- [ ] Clean failover: if phone disconnects mid-command, the host process transparently finishes remaining chunks without crashing.
+
+---
+
+### Phase 8 — Web Browser Multi-Process Offloading Engine
+- **Target Version:** `v1.2.0`
+- **Status:** `PLANNED`
+- **Milestone Objective:** Offload background browser tabs, heavy web applications, and JavaScript worker threads from the laptop onto the phone's idle RAM and CPU.
+
+#### Subsystem Mapping
+- `host/pocketbridge-core/src/browser/tab_proxy.rs` — Chromium CDP (Chrome DevTools Protocol) session dispatcher and WebSocket proxy.
+- `host/pocketbridge-core/src/browser/renderer_router.rs` — Active vs background tab classifier based on focus and viewport visibility.
+- `worker-android/.../runtime/HeadlessTabEngine.kt` — Android Headless WebView / Chromium Content Shell background renderer.
+
+#### Detailed Implementation Steps
+1. **Tab Process Separation:**
+   - Laptop retains 100% of the active tab, UI shell, window compositor, keyboard, and mouse input for zero-latency user interaction.
+   - Background tabs (inactive tabs, media streamers, dashboard watchers, web scrapers) are identified via CDP events.
+2. **Remote DOM & JavaScript Execution:**
+   - Forward background tab execution contexts to the phone's Android WebView / headless engine over the USB cable.
+   - The phone executes JavaScript evaluation, DOM manipulation, and network fetches, keeping laptop RAM usage low.
+3. **State & Cookie Synchronization:**
+   - Shared cookie jar and local storage synchronization between laptop browser process and phone worker.
+
+#### Acceptance Criteria
+- [ ] 20+ background browser tabs offloaded to phone reduce laptop RAM consumption by at least 30%.
+- [ ] Laptop UI retains 60+ FPS responsiveness with zero visual stutter on active tabs.
+- [ ] Audio/video playback in background tabs streams seamlessly without audio dropouts.
+
+---
+
+### Phase 9 — Universal AI Pipeline & Layer-Split Acceleration
+- **Target Version:** `v1.3.0`
+- **Status:** `PLANNED`
+- **Milestone Objective:** Split large artificial intelligence models (LLMs, Whisper speech recognition, and Stable Diffusion vision models) across Laptop and Phone.
+
+#### Subsystem Mapping
+- `host/pocketbridge-core/src/ai/pipeline.rs` — Tensor activation streaming and pipeline parallelism coordinator.
+- `host/pocketbridge-core/src/ai/speculative.rs` — Speculative decoding draft-and-verify orchestrator.
+- `worker-android/.../runtime/TfliteOnnxEngine.kt` — ONNX Runtime / Qualcomm QNN NPU inference runtime on Snapdragon 8 Elite.
+
+#### Detailed Implementation Steps
+1. **Transformer Pipeline Parallelism (LLM Layer Splitting):**
+   - Partition large models (LLaMA-3, Mistral, Qwen) across RAM boundaries:
+     - Laptop hosts Layers $1 \dots N$ (Intel CPU / Iris Xe GPU).
+     - Phone hosts Layers $(N+1) \dots M$ (Snapdragon 8 Elite NPU / CPU).
+   - Only intermediate activation vectors ($\sim 8\text{ KB}$ per token) are transferred over USB-C, completing in $< 0.2\text{ ms}$.
+2. **Audio Speech-to-Text Splitting (`whisper.cpp`):**
+   - Audio streams divided into 30-second segments and dispatched proportionally to Laptop and Phone simultaneously.
+   - Phoneme/text tokens merged into a unified timestamped transcript.
+3. **Speculative Decoding Engine:**
+   - Phone Snapdragon NPU runs a fast 1B draft model generating candidate tokens at high speed ($> 50\text{ tok/s}$).
+   - Laptop Intel CPU runs the full 8B/14B target model in parallel verification passes, achieving large-model quality at small-model generation speeds.
+
+#### Acceptance Criteria
+- [ ] Run an LLM that exceeds laptop single-device RAM capacity without swapping to disk.
+- [ ] Audio speech-to-text transcription demonstrates $> 1.4\text{x}$ wall-clock speedup over standalone laptop execution.
+- [ ] Verified bit-for-bit token equivalence and zero accuracy degradation.
 
 ---
 
