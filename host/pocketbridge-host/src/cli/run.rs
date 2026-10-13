@@ -27,13 +27,16 @@ pub async fn execute(
     let normalized = adapter_name.to_lowercase();
     let adapter_id = match normalized.as_str() {
         "chunk_transform" | "chunk" | "chunk_transform.v1" => "chunk_transform.v1",
-        "image_batch" | "image" | "image_batch.v1" => "image_batch.v1",
-        "data_analytics" | "analytics" | "data_analytics.v1" => "data_analytics.v1",
+        "image_batch" | "image" | "image-batch" | "image_batch.v1" => "image_batch.v1",
+        "data_analytics" | "analytics" | "data-analytics" | "data_analytics.v1" => "data_analytics.v1",
+        "ai_whisper" | "whisper" | "ai-whisper" | "ai_whisper.v1" => "ai_whisper.v1",
+        "browser_cdp" | "browser" | "browser-cdp" | "browser_cdp.v1" => "browser_cdp.v1",
+        "media_ffmpeg" | "ffmpeg" | "media-ffmpeg" | "media_ffmpeg.v1" => "media_ffmpeg.v1",
         other => {
             if registry.get(other).is_some() {
                 other
             } else {
-                anyhow::bail!("Unknown workload adapter '{}'. Available: chunk_transform, image_batch, data_analytics", adapter_name);
+                anyhow::bail!("Unknown workload adapter '{}'. Available: chunk_transform, image_batch, data_analytics, ai_whisper, browser_cdp, media_ffmpeg", adapter_name);
             }
         }
     };
@@ -44,6 +47,9 @@ pub async fn execute(
             let plugin_hint = match adapter_id {
                 "image_batch.v1" => "image-batch",
                 "data_analytics.v1" => "data-analytics",
+                "ai_whisper.v1" => "ai-whisper",
+                "browser_cdp.v1" => "browser-cdp",
+                "media_ffmpeg.v1" => "media-ffmpeg",
                 other => other,
             };
             anyhow::bail!(
@@ -97,6 +103,47 @@ pub async fn execute(
                 })?,
                 count,
                 10,
+            )
+        }
+        "ai_whisper.v1" => {
+            let samples = if records == 50_000 { 160_000 } else { records * 16 };
+            println!("Parameters:  {} audio samples (~{:.1}s), model='whisper-tiny', language='en'", samples, samples as f64 / 16000.0);
+            (
+                serde_json::json!({
+                    "samples_count": samples,
+                    "model": "whisper-tiny",
+                    "language": "en",
+                    "seed": seed,
+                }),
+                samples / 160,
+                20,
+            )
+        }
+        "browser_cdp.v1" => {
+            let tabs = if records == 50_000 { 12 } else { records.min(100) };
+            println!("Parameters:  {} browser tabs, offloading inactive tabs to Android WebView", tabs);
+            (
+                serde_json::json!({
+                    "total_tabs": tabs,
+                    "active_tabs": 2,
+                    "avg_tab_ram_mb": 150,
+                }),
+                tabs,
+                10,
+            )
+        }
+        "media_ffmpeg.v1" => {
+            let frames = if records == 50_000 { 600 } else { records };
+            println!("Parameters:  {} video frames (1080p), codec='h264', seed 0x{:016X}", frames, seed);
+            (
+                serde_json::json!({
+                    "frame_count": frames,
+                    "resolution": "1080p",
+                    "codec": "h264",
+                    "seed": seed,
+                }),
+                frames,
+                25,
             )
         }
         _ => {

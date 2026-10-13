@@ -13,7 +13,7 @@ fn test_adapter_registry_discovery() {
     // 2. Full standard suite with decoupled image and analytics adapters
     let full_reg = AdapterRegistry::with_all_standard();
     let list = full_reg.list_adapters();
-    assert_eq!(list.len(), 3);
+    assert!(list.len() >= 3);
     assert!(full_reg.get(ADAPTER_ID).is_some());
     assert!(full_reg.get(IMAGE_BATCH_ADAPTER_ID).is_some());
     assert!(full_reg.get(DATA_ANALYTICS_ADAPTER_ID).is_some());

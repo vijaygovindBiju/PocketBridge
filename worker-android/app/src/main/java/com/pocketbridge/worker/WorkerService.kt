@@ -25,6 +25,9 @@ import com.pocketbridge.worker.protocol.HelloPayload
 import com.pocketbridge.worker.protocol.JobAcceptedPayload
 import com.pocketbridge.worker.protocol.DataAnalyticsParams
 import com.pocketbridge.worker.protocol.ImageBatchParams
+import com.pocketbridge.worker.protocol.AiWhisperParams
+import com.pocketbridge.worker.protocol.BrowserCdpParams
+import com.pocketbridge.worker.protocol.MediaFfmpegParams
 import com.pocketbridge.worker.protocol.JobCancelledPayload
 import com.pocketbridge.worker.protocol.JobErrorPayload
 import com.pocketbridge.worker.protocol.JobProgressPayload
@@ -38,6 +41,9 @@ import com.pocketbridge.worker.receiver.PowerStateReceiver
 import com.pocketbridge.worker.runtime.ChunkTransformEngine
 import com.pocketbridge.worker.runtime.DataAnalyticsEngine
 import com.pocketbridge.worker.runtime.ImageBatchEngine
+import com.pocketbridge.worker.runtime.AiWhisperEngine
+import com.pocketbridge.worker.runtime.BrowserCdpEngine
+import com.pocketbridge.worker.runtime.MediaFfmpegEngine
 import com.pocketbridge.worker.runtime.TaskRuntime
 import com.pocketbridge.worker.service.WakeLockManager
 import com.pocketbridge.worker.service.WorkerNotification
@@ -240,8 +246,15 @@ class WorkerService : Service() {
                         val submit = gson.fromJson(envelope.payload, SubmitJobPayload::class.java)
                         log("Received SUBMIT_JOB: id=${submit.jobId}, adapter=${submit.adapterId}")
 
-                        when (submit.adapterId) {
-                            ChunkTransformEngine.ADAPTER_ID -> {
+                        if (submit.adapterId != ChunkTransformEngine.ADAPTER_ID && !pluginManager.isPluginInstalled(submit.adapterId)) {
+                            val errMsg = "Plugin '${submit.adapterId}' is not installed on worker phone. Install it from host using 'pocketbridge plugin install <id>'."
+                            log("Job rejected: $errMsg")
+                            val rej = JobRejectedPayload(submit.jobId, errMsg, "PLUGIN_NOT_INSTALLED")
+                            val rejEnv = Envelope(kind = MessageKind.JOB_REJECTED, payload = gson.toJsonTree(rej))
+                            FrameCodec.writeEnvelope(dataOut, rejEnv, gson)
+                        } else {
+                            when (submit.adapterId) {
+                                ChunkTransformEngine.ADAPTER_ID -> {
                                 val attemptId = UUID.randomUUID().toString()
                                 val accept = JobAcceptedPayload(submit.jobId, attemptId)
                                 val acceptEnv = Envelope(kind = MessageKind.JOB_ACCEPTED, payload = gson.toJsonTree(accept))
@@ -475,18 +488,257 @@ class WorkerService : Service() {
                                 taskRuntime.registerJob(submit.jobId, job)
                             }
 
-                            else -> {
-                                val errMsg = if (!pluginManager.isPluginInstalled(submit.adapterId)) {
-                                    "Plugin '${submit.adapterId}' is not installed on worker phone. Install it from host using 'pocketbridge plugin install <id>'."
-                                } else {
-                                    "Unsupported or unconfigured plugin adapter: ${submit.adapterId}"
+                            AiWhisperEngine.ADAPTER_ID -> {
+                                val attemptId = UUID.randomUUID().toString()
+                                val accept = JobAcceptedPayload(submit.jobId, attemptId)
+                                val acceptEnv = Envelope(kind = MessageKind.JOB_ACCEPTED, payload = gson.toJsonTree(accept))
+                                FrameCodec.writeEnvelope(dataOut, acceptEnv, gson)
+
+                                val started = JobStartedPayload(submit.jobId)
+                                val startedEnv = Envelope(kind = MessageKind.JOB_STARTED, payload = gson.toJsonTree(started))
+                                FrameCodec.writeEnvelope(dataOut, startedEnv, gson)
+
+                                val params = try {
+                                    gson.fromJson(submit.inputParameters, AiWhisperParams::class.java) ?: AiWhisperParams()
+                                } catch (_: Exception) {
+                                    AiWhisperParams()
                                 }
+
+                                val job = serviceScope.launch {
+                                    wakeLockManager.acquire(submit.jobId)
+                                    try {
+                                        val result = AiWhisperEngine.execute(
+                                            samplesCount = params.samplesCount,
+                                            model = params.model,
+                                            language = params.language,
+                                            onProgress = { fraction ->
+                                                val elapsed = System.currentTimeMillis() - accept.acceptedAtUnixMs
+                                                WorkerNotification.updateProgressNotification(
+                                                    this@WorkerService,
+                                                    submit.adapterId,
+                                                    fraction,
+                                                    elapsed,
+                                                    thermalMonitor.statusString.value,
+                                                    PowerStateReceiver.batteryPercent.value
+                                                )
+                                                val prog = JobProgressPayload(
+                                                    jobId = submit.jobId,
+                                                    progressFraction = fraction,
+                                                    elapsedComputeMs = elapsed
+                                                )
+                                                val progEnv = Envelope(kind = MessageKind.JOB_PROGRESS, payload = gson.toJsonTree(prog))
+                                                synchronized(dataOut) {
+                                                    FrameCodec.writeEnvelope(dataOut, progEnv, gson)
+                                                }
+                                            }
+                                        )
+
+                                        val manifest = ResultManifestPayload(
+                                            jobId = submit.jobId,
+                                            adapterId = submit.adapterId,
+                                            status = "succeeded",
+                                            outputSizeBytes = result.totalBytes,
+                                            outputSha256 = result.sha256Hex,
+                                            computeDurationMs = result.durationMs,
+                                            recordsProcessed = result.tokensGenerated
+                                        )
+                                        val manifestEnv = Envelope(kind = MessageKind.RESULT_MANIFEST, payload = gson.toJsonTree(manifest))
+                                        synchronized(dataOut) {
+                                            FrameCodec.writeEnvelope(dataOut, manifestEnv, gson)
+                                        }
+                                        log("Job ${submit.jobId} (ai_whisper) finished in ${result.durationMs}ms (tokens=${result.tokensGenerated}, sha=${result.sha256Hex})")
+                                    } catch (e: CancellationException) {
+                                        log("Job ${submit.jobId} cancelled")
+                                        val cancelEnv = Envelope(kind = MessageKind.CANCELLED, payload = gson.toJsonTree(JobCancelledPayload(submit.jobId)))
+                                        synchronized(dataOut) {
+                                            FrameCodec.writeEnvelope(dataOut, cancelEnv, gson)
+                                        }
+                                    } catch (e: Exception) {
+                                        log("Job ${submit.jobId} failed: ${e.message}")
+                                        val err = JobErrorPayload(submit.jobId, "EXECUTION_ERROR", e.message ?: "Unknown error")
+                                        val errEnv = Envelope(kind = MessageKind.JOB_ERROR, payload = gson.toJsonTree(err))
+                                        synchronized(dataOut) {
+                                            FrameCodec.writeEnvelope(dataOut, errEnv, gson)
+                                        }
+                                    } finally {
+                                        wakeLockManager.release(submit.jobId)
+                                        WorkerNotification.updateIdle(this@WorkerService, "Listening on 127.0.0.1:$PORT")
+                                        taskRuntime.unregisterJob(submit.jobId)
+                                    }
+                                }
+                                taskRuntime.registerJob(submit.jobId, job)
+                            }
+
+                            BrowserCdpEngine.ADAPTER_ID -> {
+                                val attemptId = UUID.randomUUID().toString()
+                                val accept = JobAcceptedPayload(submit.jobId, attemptId)
+                                val acceptEnv = Envelope(kind = MessageKind.JOB_ACCEPTED, payload = gson.toJsonTree(accept))
+                                FrameCodec.writeEnvelope(dataOut, acceptEnv, gson)
+
+                                val started = JobStartedPayload(submit.jobId)
+                                val startedEnv = Envelope(kind = MessageKind.JOB_STARTED, payload = gson.toJsonTree(started))
+                                FrameCodec.writeEnvelope(dataOut, startedEnv, gson)
+
+                                val params = try {
+                                    gson.fromJson(submit.inputParameters, BrowserCdpParams::class.java) ?: BrowserCdpParams()
+                                } catch (_: Exception) {
+                                    BrowserCdpParams()
+                                }
+
+                                val job = serviceScope.launch {
+                                    wakeLockManager.acquire(submit.jobId)
+                                    try {
+                                        val result = BrowserCdpEngine.execute(
+                                            totalTabs = params.totalTabs,
+                                            activeTabs = params.activeTabs,
+                                            onProgress = { fraction ->
+                                                val elapsed = System.currentTimeMillis() - accept.acceptedAtUnixMs
+                                                WorkerNotification.updateProgressNotification(
+                                                    this@WorkerService,
+                                                    submit.adapterId,
+                                                    fraction,
+                                                    elapsed,
+                                                    thermalMonitor.statusString.value,
+                                                    PowerStateReceiver.batteryPercent.value
+                                                )
+                                                val prog = JobProgressPayload(
+                                                    jobId = submit.jobId,
+                                                    progressFraction = fraction,
+                                                    elapsedComputeMs = elapsed
+                                                )
+                                                val progEnv = Envelope(kind = MessageKind.JOB_PROGRESS, payload = gson.toJsonTree(prog))
+                                                synchronized(dataOut) {
+                                                    FrameCodec.writeEnvelope(dataOut, progEnv, gson)
+                                                }
+                                            }
+                                        )
+
+                                        val manifest = ResultManifestPayload(
+                                            jobId = submit.jobId,
+                                            adapterId = submit.adapterId,
+                                            status = "succeeded",
+                                            outputSizeBytes = result.totalBytes,
+                                            outputSha256 = result.sha256Hex,
+                                            computeDurationMs = result.durationMs,
+                                            recordsProcessed = result.backgroundTabs.toLong()
+                                        )
+                                        val manifestEnv = Envelope(kind = MessageKind.RESULT_MANIFEST, payload = gson.toJsonTree(manifest))
+                                        synchronized(dataOut) {
+                                            FrameCodec.writeEnvelope(dataOut, manifestEnv, gson)
+                                        }
+                                        log("Job ${submit.jobId} (browser_cdp) finished in ${result.durationMs}ms (offloaded=${result.backgroundTabs} tabs, ramSaved=${result.ramSavedMb}MB, sha=${result.sha256Hex})")
+                                    } catch (e: CancellationException) {
+                                        log("Job ${submit.jobId} cancelled")
+                                        val cancelEnv = Envelope(kind = MessageKind.CANCELLED, payload = gson.toJsonTree(JobCancelledPayload(submit.jobId)))
+                                        synchronized(dataOut) {
+                                            FrameCodec.writeEnvelope(dataOut, cancelEnv, gson)
+                                        }
+                                    } catch (e: Exception) {
+                                        log("Job ${submit.jobId} failed: ${e.message}")
+                                        val err = JobErrorPayload(submit.jobId, "EXECUTION_ERROR", e.message ?: "Unknown error")
+                                        val errEnv = Envelope(kind = MessageKind.JOB_ERROR, payload = gson.toJsonTree(err))
+                                        synchronized(dataOut) {
+                                            FrameCodec.writeEnvelope(dataOut, errEnv, gson)
+                                        }
+                                    } finally {
+                                        wakeLockManager.release(submit.jobId)
+                                        WorkerNotification.updateIdle(this@WorkerService, "Listening on 127.0.0.1:$PORT")
+                                        taskRuntime.unregisterJob(submit.jobId)
+                                    }
+                                }
+                                taskRuntime.registerJob(submit.jobId, job)
+                            }
+
+                            MediaFfmpegEngine.ADAPTER_ID -> {
+                                val attemptId = UUID.randomUUID().toString()
+                                val accept = JobAcceptedPayload(submit.jobId, attemptId)
+                                val acceptEnv = Envelope(kind = MessageKind.JOB_ACCEPTED, payload = gson.toJsonTree(accept))
+                                FrameCodec.writeEnvelope(dataOut, acceptEnv, gson)
+
+                                val started = JobStartedPayload(submit.jobId)
+                                val startedEnv = Envelope(kind = MessageKind.JOB_STARTED, payload = gson.toJsonTree(started))
+                                FrameCodec.writeEnvelope(dataOut, startedEnv, gson)
+
+                                val params = try {
+                                    gson.fromJson(submit.inputParameters, MediaFfmpegParams::class.java) ?: MediaFfmpegParams()
+                                } catch (_: Exception) {
+                                    MediaFfmpegParams()
+                                }
+
+                                val job = serviceScope.launch {
+                                    wakeLockManager.acquire(submit.jobId)
+                                    try {
+                                        val result = MediaFfmpegEngine.execute(
+                                            frameCount = params.frameCount,
+                                            resolution = params.resolution,
+                                            codec = params.codec,
+                                            onProgress = { fraction ->
+                                                val elapsed = System.currentTimeMillis() - accept.acceptedAtUnixMs
+                                                WorkerNotification.updateProgressNotification(
+                                                    this@WorkerService,
+                                                    submit.adapterId,
+                                                    fraction,
+                                                    elapsed,
+                                                    thermalMonitor.statusString.value,
+                                                    PowerStateReceiver.batteryPercent.value
+                                                )
+                                                val prog = JobProgressPayload(
+                                                    jobId = submit.jobId,
+                                                    progressFraction = fraction,
+                                                    elapsedComputeMs = elapsed
+                                                )
+                                                val progEnv = Envelope(kind = MessageKind.JOB_PROGRESS, payload = gson.toJsonTree(prog))
+                                                synchronized(dataOut) {
+                                                    FrameCodec.writeEnvelope(dataOut, progEnv, gson)
+                                                }
+                                            }
+                                        )
+
+                                        val manifest = ResultManifestPayload(
+                                            jobId = submit.jobId,
+                                            adapterId = submit.adapterId,
+                                            status = "succeeded",
+                                            outputSizeBytes = result.totalBytes,
+                                            outputSha256 = result.sha256Hex,
+                                            computeDurationMs = result.durationMs,
+                                            recordsProcessed = result.framesProcessed
+                                        )
+                                        val manifestEnv = Envelope(kind = MessageKind.RESULT_MANIFEST, payload = gson.toJsonTree(manifest))
+                                        synchronized(dataOut) {
+                                            FrameCodec.writeEnvelope(dataOut, manifestEnv, gson)
+                                        }
+                                        log("Job ${submit.jobId} (media_ffmpeg) finished in ${result.durationMs}ms (frames=${result.framesProcessed}, sha=${result.sha256Hex})")
+                                    } catch (e: CancellationException) {
+                                        log("Job ${submit.jobId} cancelled")
+                                        val cancelEnv = Envelope(kind = MessageKind.CANCELLED, payload = gson.toJsonTree(JobCancelledPayload(submit.jobId)))
+                                        synchronized(dataOut) {
+                                            FrameCodec.writeEnvelope(dataOut, cancelEnv, gson)
+                                        }
+                                    } catch (e: Exception) {
+                                        log("Job ${submit.jobId} failed: ${e.message}")
+                                        val err = JobErrorPayload(submit.jobId, "EXECUTION_ERROR", e.message ?: "Unknown error")
+                                        val errEnv = Envelope(kind = MessageKind.JOB_ERROR, payload = gson.toJsonTree(err))
+                                        synchronized(dataOut) {
+                                            FrameCodec.writeEnvelope(dataOut, errEnv, gson)
+                                        }
+                                    } finally {
+                                        wakeLockManager.release(submit.jobId)
+                                        WorkerNotification.updateIdle(this@WorkerService, "Listening on 127.0.0.1:$PORT")
+                                        taskRuntime.unregisterJob(submit.jobId)
+                                    }
+                                }
+                                taskRuntime.registerJob(submit.jobId, job)
+                            }
+
+                            else -> {
+                                val errMsg = "Unsupported or unconfigured plugin adapter: ${submit.adapterId}"
                                 val rej = JobRejectedPayload(submit.jobId, errMsg, "UNSUPPORTED_ADAPTER")
                                 val rejEnv = Envelope(kind = MessageKind.JOB_REJECTED, payload = gson.toJsonTree(rej))
                                 FrameCodec.writeEnvelope(dataOut, rejEnv, gson)
                             }
                         }
                     }
+                }
 
                     MessageKind.CANCEL_JOB -> {
                         val cancelPayload = gson.fromJson(envelope.payload, CancelJobPayload::class.java)

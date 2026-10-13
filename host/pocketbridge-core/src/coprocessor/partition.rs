@@ -186,6 +186,62 @@ pub fn partition_workload(
                 serde_json::to_value(worker_params)?,
             ))
         }
+        "ai_whisper.v1" => {
+            let total_samples = params.get("samples_count")
+                .or_else(|| params.get("records"))
+                .and_then(|v| v.as_u64())
+                .unwrap_or(160_000);
+            let host_samples = ((total_samples as f64) * ratio).round() as u64;
+            let worker_samples = total_samples.saturating_sub(host_samples);
+
+            let mut host_p = params.clone();
+            let mut worker_p = params.clone();
+            if let Some(obj) = host_p.as_object_mut() {
+                obj.insert("samples_count".to_string(), serde_json::json!(host_samples));
+            }
+            if let Some(obj) = worker_p.as_object_mut() {
+                obj.insert("samples_count".to_string(), serde_json::json!(worker_samples));
+            }
+            Ok((host_p, worker_p))
+        }
+        "browser_cdp.v1" => {
+            let total_tabs = params.get("total_tabs")
+                .or_else(|| params.get("records"))
+                .and_then(|v| v.as_u64())
+                .unwrap_or(12);
+            let host_tabs = ((total_tabs as f64) * ratio).round().max(1.0) as u64;
+            let worker_tabs = total_tabs.saturating_sub(host_tabs);
+
+            let mut host_p = params.clone();
+            let mut worker_p = params.clone();
+            if let Some(obj) = host_p.as_object_mut() {
+                obj.insert("total_tabs".to_string(), serde_json::json!(host_tabs));
+                obj.insert("active_tabs".to_string(), serde_json::json!(host_tabs));
+            }
+            if let Some(obj) = worker_p.as_object_mut() {
+                obj.insert("total_tabs".to_string(), serde_json::json!(worker_tabs));
+                obj.insert("active_tabs".to_string(), serde_json::json!(0));
+            }
+            Ok((host_p, worker_p))
+        }
+        "media_ffmpeg.v1" => {
+            let total_frames = params.get("frame_count")
+                .or_else(|| params.get("records"))
+                .and_then(|v| v.as_u64())
+                .unwrap_or(600);
+            let host_frames = ((total_frames as f64) * ratio).round() as u64;
+            let worker_frames = total_frames.saturating_sub(host_frames);
+
+            let mut host_p = params.clone();
+            let mut worker_p = params.clone();
+            if let Some(obj) = host_p.as_object_mut() {
+                obj.insert("frame_count".to_string(), serde_json::json!(host_frames));
+            }
+            if let Some(obj) = worker_p.as_object_mut() {
+                obj.insert("frame_count".to_string(), serde_json::json!(worker_frames));
+            }
+            Ok((host_p, worker_p))
+        }
         _ => Err(PocketBridgeError::AdapterError(format!(
             "Unsupported adapter for hybrid co-processing: {adapter_id}"
         ))),

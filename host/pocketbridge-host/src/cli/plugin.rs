@@ -76,11 +76,13 @@ pub async fn execute(cmd: PluginCommands) -> Result<()> {
         }
 
         PluginCommands::Install { id, port } => {
-            println!("Installing Plugin: '{}'...", id);
-            println!("==========================================================================");
-
-            let manifest = find_catalog_plugin(&id)
-                .with_context(|| format!("Plugin '{}' not found in catalog. Run 'pocketbridge plugin list' to view available plugins.", id))?;
+            let plugins_to_install = if id.eq_ignore_ascii_case("all") {
+                pocketbridge_core::default_catalog()
+            } else {
+                let manifest = find_catalog_plugin(&id)
+                    .with_context(|| format!("Plugin '{}' not found in catalog. Run 'pocketbridge plugin list' to view available plugins.", id))?;
+                vec![manifest]
+            };
 
             // 1. Host profile
             let host_profile = match collect_host_profile().await {
@@ -107,10 +109,8 @@ pub async fn execute(cmd: PluginCommands) -> Result<()> {
                 },
             };
             let host_ram_mb = host_profile.ram_total_bytes / (1024 * 1024);
-            println!(">> [1/4] Inspecting host resources... ({} MB RAM available)", host_ram_mb);
 
             // 2. Query worker profile over ADB if available
-            println!(">> [2/4] Querying worker phone over ADB (port {})...", port);
             let transport = AdbTransport::new(port);
             let worker_profile: Option<DeviceProfile> = if transport.check_device().await.is_ok() {
                 transport.query_getprop().await.ok().map(|props| {
@@ -120,32 +120,37 @@ pub async fn execute(cmd: PluginCommands) -> Result<()> {
                 None
             };
 
-            if let Some(worker) = &worker_profile {
-                let w_ram = worker.ram_total_bytes / (1024 * 1024);
-                println!("         Worker phone detected: {} ({} MB RAM)", worker.device_model.as_deref().unwrap_or("Android"), w_ram);
-            } else {
-                println!("         Worker phone not currently connected; skipping worker pre-flight.");
+            for manifest in plugins_to_install {
+                println!("\nInstalling Plugin: '{}' ({})", manifest.id, manifest.name);
+                println!("==========================================================================");
+                println!(">> [1/4] Host resources: {} MB RAM available", host_ram_mb);
+
+                if let Some(worker) = &worker_profile {
+                    let w_ram = worker.ram_total_bytes / (1024 * 1024);
+                    println!(">> [2/4] Worker phone: {} ({} MB RAM)", worker.device_model.as_deref().unwrap_or("Android"), w_ram);
+                } else {
+                    println!(">> [2/4] Worker phone not currently connected; skipping worker pre-flight.");
+                }
+
+                // 3. Pre-flight check
+                print!(">> [3/4] Running pre-flight hardware requirement gates... ");
+                manager.check_preflight(&manifest, host_ram_mb, worker_profile.as_ref())
+                    .context("Pre-flight hardware check failed")?;
+                println!("[OK]");
+
+                // 4. Install locally
+                print!(">> [4/4] Installing plugin package to host... ");
+                let dir = manager.install_manifest(&manifest, None)?;
+                println!("[OK] Installed at {}", dir.display());
+
+                // 5. Worker sync over ADB
+                let sync_note = manager.sync_to_worker(&manifest, None).await?;
+                println!(">> [Sync] {}", sync_note);
+
+                println!("--------------------------------------------------------------------------");
+                println!("Plugin '{}' (v{}) successfully installed!", manifest.name, manifest.version);
+                println!("Adapter '{}' is now active. Run: pocketbridge run -a {}", manifest.adapter_id, manifest.adapter_id);
             }
-
-            // 3. Pre-flight check
-            print!(">> [3/4] Running pre-flight hardware requirement gates... ");
-            manager.check_preflight(&manifest, host_ram_mb, worker_profile.as_ref())
-                .context("Pre-flight hardware check failed")?;
-            println!("[OK]");
-
-            // 4. Install locally
-            print!(">> [4/4] Installing plugin package to host... ");
-            let dir = manager.install_manifest(&manifest, None)?;
-            println!("[OK] Installed at {}", dir.display());
-
-            // 5. Worker sync over ADB
-            let sync_note = manager.sync_to_worker(&manifest, None).await?;
-            println!(">> [Sync] {}", sync_note);
-
-            println!("--------------------------------------------------------------------------");
-            println!("Plugin '{}' (v{}) successfully installed!", manifest.name, manifest.version);
-            println!("Adapter '{}' is now active and ready for execution.", manifest.adapter_id);
-            println!("Try running: pocketbridge run -a {}", manifest.adapter_id);
         }
 
         PluginCommands::Remove { id } => {

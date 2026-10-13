@@ -106,6 +106,23 @@ data class DataAnalyticsParams(
     @SerializedName("filter_max") val filterMax: Long = Long.MAX_VALUE
 )
 
+data class AiWhisperParams(
+    @SerializedName("samples_count") val samplesCount: Long = 160000L,
+    @SerializedName("model") val model: String = "whisper-tiny",
+    @SerializedName("language") val language: String = "en"
+)
+
+data class BrowserCdpParams(
+    @SerializedName("total_tabs") val totalTabs: Int = 12,
+    @SerializedName("active_tabs") val activeTabs: Int = 2
+)
+
+data class MediaFfmpegParams(
+    @SerializedName("frame_count") val frameCount: Int = 600,
+    @SerializedName("resolution") val resolution: String = "1080p",
+    @SerializedName("codec") val codec: String = "h264"
+)
+
 data class JobAcceptedPayload(
     @SerializedName("job_id") val jobId: String,
     @SerializedName("attempt_id") val attemptId: String,
