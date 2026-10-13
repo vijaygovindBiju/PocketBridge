@@ -34,6 +34,16 @@ class WorkerPluginManager(private val context: Context) {
         return dir
     }
 
+    fun getPluginSearchDirs(): List<File> {
+        val list = mutableListOf<File>()
+        list.add(getPluginsDir())
+        context.getExternalFilesDir(null)?.let {
+            list.add(File(it, "plugins"))
+        }
+        list.add(File("/data/local/tmp/pocketbridge/plugins"))
+        return list
+    }
+
     /**
      * Check if a plugin adapter is installed and ready.
      * `chunk_transform.v1` is always true as the built-in baseline hardware benchmark.
@@ -41,17 +51,19 @@ class WorkerPluginManager(private val context: Context) {
     fun isPluginInstalled(adapterId: String): Boolean {
         if (adapterId == "chunk_transform.v1") return true
 
-        val dir = getPluginsDir()
-        val subdirs = dir.listFiles { f -> f.isDirectory } ?: return false
-        for (sub in subdirs) {
-            val manifestFile = File(sub, "manifest.json")
-            if (manifestFile.exists()) {
-                try {
-                    val manifest = gson.fromJson(manifestFile.readText(), MobilePluginManifest::class.java)
-                    if (manifest.id == adapterId || manifest.adapter_id == adapterId) {
-                        return true
-                    }
-                } catch (_: Exception) {}
+        for (dir in getPluginSearchDirs()) {
+            if (!dir.exists()) continue
+            val subdirs = dir.listFiles { f -> f.isDirectory } ?: continue
+            for (sub in subdirs) {
+                val manifestFile = File(sub, "manifest.json")
+                if (manifestFile.exists()) {
+                    try {
+                        val manifest = gson.fromJson(manifestFile.readText(), MobilePluginManifest::class.java)
+                        if (manifest.id == adapterId || manifest.adapter_id == adapterId) {
+                            return true
+                        }
+                    } catch (_: Exception) {}
+                }
             }
         }
         return false
@@ -62,15 +74,20 @@ class WorkerPluginManager(private val context: Context) {
      */
     fun listInstalledPlugins(): List<MobilePluginManifest> {
         val list = mutableListOf<MobilePluginManifest>()
-        val dir = getPluginsDir()
-        val subdirs = dir.listFiles { f -> f.isDirectory } ?: return list
-        for (sub in subdirs) {
-            val manifestFile = File(sub, "manifest.json")
-            if (manifestFile.exists()) {
-                try {
-                    val manifest = gson.fromJson(manifestFile.readText(), MobilePluginManifest::class.java)
-                    list.add(manifest)
-                } catch (_: Exception) {}
+        val seen = mutableSetOf<String>()
+        for (dir in getPluginSearchDirs()) {
+            if (!dir.exists()) continue
+            val subdirs = dir.listFiles { f -> f.isDirectory } ?: continue
+            for (sub in subdirs) {
+                val manifestFile = File(sub, "manifest.json")
+                if (manifestFile.exists()) {
+                    try {
+                        val manifest = gson.fromJson(manifestFile.readText(), MobilePluginManifest::class.java)
+                        if (seen.add(manifest.id)) {
+                            list.add(manifest)
+                        }
+                    } catch (_: Exception) {}
+                }
             }
         }
         return list

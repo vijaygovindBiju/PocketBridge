@@ -167,11 +167,17 @@ pub fn build_worker_profile_from_props(props: &HashMap<String, String>) -> Devic
         architecture: arch,
         cpu_model: soc.clone().unwrap_or_else(|| "ARM64".into()),
         cpu_cores: 8, // Typical mobile flagship; verified in app
-        ram_total_bytes: 0,
+        ram_total_bytes: props
+            .get("PB_MEM_TOTAL_BYTES")
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(8 * 1024 * 1024 * 1024), // Fallback: 8 GB typical modern flagship
         ram_available_bytes: None,
         gpu: None,
         storage_total_bytes: None,
-        storage_available_bytes: None,
+        storage_available_bytes: props
+            .get("PB_STORAGE_AVAIL_BYTES")
+            .and_then(|v| v.parse::<u64>().ok())
+            .or(Some(32 * 1024 * 1024 * 1024)), // Fallback: 32 GB typical storage
         android_api_level: api_level,
         device_model,
         soc,

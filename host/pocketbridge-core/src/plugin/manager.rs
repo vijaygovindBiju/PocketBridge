@@ -211,16 +211,13 @@ impl PluginManager {
             )));
         }
 
-        let remote_dest = format!(
-            "/sdcard/Android/data/com.pocketbridge.worker/files/plugins/{}/",
-            manifest.id
-        );
+        let remote_parent = "/data/local/tmp/pocketbridge/plugins/";
 
         let mut cmd = tokio::process::Command::new("adb");
         if let Some(serial) = device_serial {
             cmd.args(["-s", serial]);
         }
-        cmd.args(["shell", "mkdir", "-p", &remote_dest]);
+        cmd.args(["shell", "mkdir", "-p", remote_parent]);
 
         let status = cmd.status().await;
         match status {
@@ -230,12 +227,24 @@ impl PluginManager {
                 if let Some(serial) = device_serial {
                     push_cmd.args(["-s", serial]);
                 }
-                push_cmd.args(["push", plugin_dir.to_str().unwrap(), &remote_dest]);
+                push_cmd.args(["push", plugin_dir.to_str().unwrap(), remote_parent]);
                 let push_res = push_cmd.output().await;
                 match push_res {
                     Ok(output) if output.status.success() => {
                         let out_msg = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                        Ok(format!("Synced '{}' to phone at {}: {}", manifest.id, remote_dest, out_msg))
+                        // Also mirror into app storage if run-as available
+                        let mut copy_cmd = tokio::process::Command::new("adb");
+                        if let Some(serial) = device_serial {
+                            copy_cmd.args(["-s", serial]);
+                        }
+                        let copy_script = format!(
+                            "run-as com.pocketbridge.worker mkdir -p files/plugins/{id} 2>/dev/null && run-as com.pocketbridge.worker cp -r /data/local/tmp/pocketbridge/plugins/{id}/* files/plugins/{id}/ 2>/dev/null || true",
+                            id = manifest.id
+                        );
+                        copy_cmd.args(["shell", &copy_script]);
+                        let _ = copy_cmd.output().await;
+
+                        Ok(format!("Synced '{}' to phone at {}: {}", manifest.id, remote_parent, out_msg))
                     }
                     Ok(output) => {
                         let err_msg = String::from_utf8_lossy(&output.stderr).trim().to_string();

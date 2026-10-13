@@ -113,9 +113,14 @@ pub async fn execute(cmd: PluginCommands) -> Result<()> {
             // 2. Query worker profile over ADB if available
             let transport = AdbTransport::new(port);
             let worker_profile: Option<DeviceProfile> = if transport.check_device().await.is_ok() {
-                transport.query_getprop().await.ok().map(|props| {
-                    pocketbridge_core::profiler::build_worker_profile_from_props(&props)
-                })
+                let mut props = transport.query_getprop().await.unwrap_or_default();
+                if let Some(mem_bytes) = transport.query_mem_total_bytes().await {
+                    props.insert("PB_MEM_TOTAL_BYTES".to_string(), mem_bytes.to_string());
+                }
+                if let Some(storage_bytes) = transport.query_storage_available_bytes().await {
+                    props.insert("PB_STORAGE_AVAIL_BYTES".to_string(), storage_bytes.to_string());
+                }
+                Some(pocketbridge_core::profiler::build_worker_profile_from_props(&props))
             } else {
                 None
             };

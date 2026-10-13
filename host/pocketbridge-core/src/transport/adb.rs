@@ -135,4 +135,48 @@ impl AdbTransport {
         }
         Ok(props)
     }
+
+    /// Query total RAM in bytes from /proc/meminfo over ADB
+    pub async fn query_mem_total_bytes(&self) -> Option<u64> {
+        let output = Command::new("adb")
+            .args(["shell", "cat /proc/meminfo"])
+            .output()
+            .await
+            .ok()?;
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                if line.starts_with("MemTotal:") {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 2 {
+                        if let Ok(kb) = parts[1].parse::<u64>() {
+                            return Some(kb * 1024);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Query available storage in bytes from df /data over ADB
+    pub async fn query_storage_available_bytes(&self) -> Option<u64> {
+        let output = Command::new("adb")
+            .args(["shell", "df -k /data"])
+            .output()
+            .await
+            .ok()?;
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines().skip(1) {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 4 {
+                    if let Ok(kb) = parts[3].parse::<u64>() {
+                        return Some(kb * 1024);
+                    }
+                }
+            }
+        }
+        None
+    }
 }
