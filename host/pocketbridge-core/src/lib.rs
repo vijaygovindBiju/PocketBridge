@@ -8,9 +8,15 @@ pub mod profiler;
 pub mod protocol;
 pub mod ai;
 pub mod browser;
+pub mod plugin;
 pub mod scheduler;
 pub mod transport;
 pub mod universal;
+
+pub use plugin::{
+    default_catalog, find_catalog_plugin, DynamicPluginAdapter, PluginKind, PluginManifest,
+    PluginManager, PluginRequirements,
+};
 
 pub use ai::{
     ActivationTensorPayload, ModelPipelineConfig, SpeculativeCoordinator, SpeculativeRoundResult,

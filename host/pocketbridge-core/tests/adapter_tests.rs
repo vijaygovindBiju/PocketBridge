@@ -5,12 +5,18 @@ use pocketbridge_core::{
 
 #[test]
 fn test_adapter_registry_discovery() {
-    let registry = AdapterRegistry::default();
-    let list = registry.list_adapters();
+    // 1. Out of the box (Option 2 micro-kernel): built-in hardware calibration adapter is immediately ready
+    let default_reg = AdapterRegistry::default();
+    assert!(default_reg.get(ADAPTER_ID).is_some());
+    assert!(default_reg.list_adapters().iter().any(|(id, _)| *id == ADAPTER_ID));
+
+    // 2. Full standard suite with decoupled image and analytics adapters
+    let full_reg = AdapterRegistry::with_all_standard();
+    let list = full_reg.list_adapters();
     assert_eq!(list.len(), 3);
-    assert!(registry.get(ADAPTER_ID).is_some());
-    assert!(registry.get(IMAGE_BATCH_ADAPTER_ID).is_some());
-    assert!(registry.get(DATA_ANALYTICS_ADAPTER_ID).is_some());
+    assert!(full_reg.get(ADAPTER_ID).is_some());
+    assert!(full_reg.get(IMAGE_BATCH_ADAPTER_ID).is_some());
+    assert!(full_reg.get(DATA_ANALYTICS_ADAPTER_ID).is_some());
 }
 
 #[test]
@@ -30,7 +36,7 @@ fn test_chunk_transform_adapter_execution() {
 
 #[test]
 fn test_image_batch_adapter_operations() {
-    let registry = AdapterRegistry::default();
+    let registry = AdapterRegistry::with_all_standard();
 
     for op in ["grayscale_invert", "box_blur_3x3", "downscale_half"] {
         let params = serde_json::to_value(ImageBatchParams {
@@ -50,7 +56,7 @@ fn test_image_batch_adapter_operations() {
 
 #[test]
 fn test_data_analytics_adapter_filtering() {
-    let registry = AdapterRegistry::default();
+    let registry = AdapterRegistry::with_all_standard();
     let params = serde_json::to_value(DataAnalyticsParams {
         record_count: 10_000,
         seed: 0x987654321,
@@ -89,7 +95,7 @@ async fn test_image_batch_remote_mock_lifecycle() {
         let started_env = Envelope::job_started(&submit.job_id, 1005);
         write_envelope(&mut socket, &started_env).await.expect("send job_started");
 
-        let registry = AdapterRegistry::default();
+        let registry = AdapterRegistry::with_all_standard();
         let compute_out = registry.execute_local(IMAGE_BATCH_ADAPTER_ID, &submit.input_parameters).unwrap();
 
         let manifest_payload = ResultManifestPayload {
@@ -114,7 +120,7 @@ async fn test_image_batch_remote_mock_lifecycle() {
         operation: "grayscale_invert".to_string(),
     }).unwrap();
 
-    let registry = AdapterRegistry::default();
+    let registry = AdapterRegistry::with_all_standard();
     let local_res = registry.execute_local(IMAGE_BATCH_ADAPTER_ID, &params).unwrap();
 
     let mut client_stream = tokio::net::TcpStream::connect(addr).await.expect("connect to mock worker");
@@ -159,7 +165,7 @@ async fn test_data_analytics_remote_mock_lifecycle() {
         let started_env = Envelope::job_started(&submit.job_id, 1005);
         write_envelope(&mut socket, &started_env).await.expect("send job_started");
 
-        let registry = AdapterRegistry::default();
+        let registry = AdapterRegistry::with_all_standard();
         let compute_out = registry.execute_local(DATA_ANALYTICS_ADAPTER_ID, &submit.input_parameters).unwrap();
 
         let manifest_payload = ResultManifestPayload {
@@ -183,7 +189,7 @@ async fn test_data_analytics_remote_mock_lifecycle() {
         filter_max: i64::MAX,
     }).unwrap();
 
-    let registry = AdapterRegistry::default();
+    let registry = AdapterRegistry::with_all_standard();
     let local_res = registry.execute_local(DATA_ANALYTICS_ADAPTER_ID, &params).unwrap();
 
     let mut client_stream = tokio::net::TcpStream::connect(addr).await.expect("connect to mock worker");

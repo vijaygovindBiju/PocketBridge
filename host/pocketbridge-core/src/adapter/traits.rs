@@ -17,10 +17,10 @@ pub struct AdapterExecutionResult {
 /// Generic trait for all task adapters supported by PocketBridge.
 pub trait WorkloadAdapter: Send + Sync {
     /// Unique identifier for this adapter (e.g. "chunk_transform.v1", "image_batch.v1").
-    fn adapter_id(&self) -> &'static str;
+    fn adapter_id(&self) -> &str;
 
     /// Human-readable description of what this adapter does.
-    fn description(&self) -> &'static str;
+    fn description(&self) -> &str;
 
     /// Validate JSON input parameters before submission.
     fn validate_params(&self, params: &serde_json::Value) -> Result<(), PocketBridgeError>;

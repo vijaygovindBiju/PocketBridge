@@ -3,6 +3,7 @@ pub mod connect;
 pub mod exec;
 pub mod fleet;
 pub mod plan;
+pub mod plugin;
 pub mod profile;
 pub mod run;
 
@@ -136,6 +137,11 @@ pub enum Commands {
         #[arg(last = true, required = true)]
         command: Vec<String>,
     },
+    /// Manage modular compute plugins and AI model packages
+    Plugin {
+        #[command(subcommand)]
+        action: plugin::PluginCommands,
+    },
 }
 
 pub async fn handle_command(cmd: Commands) -> Result<()> {
@@ -196,5 +202,6 @@ pub async fn handle_command(cmd: Commands) -> Result<()> {
             port,
             command,
         } => exec::run(&command, &strategy, host_ratio, input_file.as_deref(), port).await,
+        Commands::Plugin { action } => plugin::execute(action).await,
     }
 }

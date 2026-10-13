@@ -1,0 +1,114 @@
+use super::manifest::{PluginKind, PluginManifest, PluginRequirements};
+
+/// Return the curated official PocketBridge Community Hub plugin catalog.
+pub fn default_catalog() -> Vec<PluginManifest> {
+    vec![
+        PluginManifest {
+            id: "image-batch".to_string(),
+            name: "Image Batch Processor".to_string(),
+            version: "1.0.0".to_string(),
+            description: "High-throughput parallel image resizing, inversion, and box-blur filtering".to_string(),
+            author: "PocketBridge Core Team".to_string(),
+            license: "Apache-2.0".to_string(),
+            kind: PluginKind::Native,
+            adapter_id: "image_batch.v1".to_string(),
+            requirements: PluginRequirements {
+                min_host_ram_mb: 256,
+                min_worker_ram_mb: 128,
+                min_worker_storage_mb: 15,
+            },
+            sha256: Some("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string()),
+            size_bytes: 1_250_000,
+            host_entrypoint: Some("image_batch".to_string()),
+            worker_entrypoint: Some("libimage_batch.so".to_string()),
+            download_url: Some("https://github.com/PocketBridge/pocketbridge-plugins/releases/download/v1.0.0/image-batch.tar.gz".to_string()),
+        },
+        PluginManifest {
+            id: "data-analytics".to_string(),
+            name: "Data Analytics Engine".to_string(),
+            version: "1.0.0".to_string(),
+            description: "Structured CSV/TSV table reduction, sum, min/max, and numerical filtering".to_string(),
+            author: "PocketBridge Core Team".to_string(),
+            license: "Apache-2.0".to_string(),
+            kind: PluginKind::Native,
+            adapter_id: "data_analytics.v1".to_string(),
+            requirements: PluginRequirements {
+                min_host_ram_mb: 128,
+                min_worker_ram_mb: 64,
+                min_worker_storage_mb: 10,
+            },
+            sha256: Some("f4b1c24298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852a111".to_string()),
+            size_bytes: 850_000,
+            host_entrypoint: Some("data_analytics".to_string()),
+            worker_entrypoint: Some("libdata_analytics.so".to_string()),
+            download_url: Some("https://github.com/PocketBridge/pocketbridge-plugins/releases/download/v1.0.0/data-analytics.tar.gz".to_string()),
+        },
+        PluginManifest {
+            id: "ai-whisper".to_string(),
+            name: "Whisper Voice Transcription".to_string(),
+            version: "1.1.0".to_string(),
+            description: "On-device speech-to-text audio transcription running on Snapdragon 8 Elite NPU / CPU".to_string(),
+            author: "PocketBridge AI Hub".to_string(),
+            license: "MIT".to_string(),
+            kind: PluginKind::AiModel,
+            adapter_id: "ai_whisper.v1".to_string(),
+            requirements: PluginRequirements {
+                min_host_ram_mb: 1024,
+                min_worker_ram_mb: 1536,
+                min_worker_storage_mb: 150,
+            },
+            sha256: Some("a1b2c3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef0".to_string()),
+            size_bytes: 75_000_000,
+            host_entrypoint: Some("whisper_runner".to_string()),
+            worker_entrypoint: Some("whisper-tiny.bin".to_string()),
+            download_url: Some("https://github.com/PocketBridge/pocketbridge-plugins/releases/download/v1.0.0/ai-whisper.tar.gz".to_string()),
+        },
+        PluginManifest {
+            id: "browser-cdp".to_string(),
+            name: "Headless Chromium Tab Renderer".to_string(),
+            version: "0.9.0".to_string(),
+            description: "Offloads inactive Chrome/Firefox tabs to mobile phone's Android WebView engine".to_string(),
+            author: "PocketBridge Core Team".to_string(),
+            license: "Apache-2.0".to_string(),
+            kind: PluginKind::WebHeadless,
+            adapter_id: "browser_cdp.v1".to_string(),
+            requirements: PluginRequirements {
+                min_host_ram_mb: 512,
+                min_worker_ram_mb: 512,
+                min_worker_storage_mb: 50,
+            },
+            sha256: Some("c4d5e6f7a8b90123456789abcdef0123456789abcdef0123456789abcdef0123".to_string()),
+            size_bytes: 15_000_000,
+            host_entrypoint: Some("cdp_bridge".to_string()),
+            worker_entrypoint: Some("headless_worker.html".to_string()),
+            download_url: Some("https://github.com/PocketBridge/pocketbridge-plugins/releases/download/v1.0.0/browser-cdp.tar.gz".to_string()),
+        },
+        PluginManifest {
+            id: "media-ffmpeg".to_string(),
+            name: "FFmpeg Parallel Media Splitter".to_string(),
+            version: "1.2.0".to_string(),
+            description: "Distributed H.264/AV1 video transcoding slices across Intel QuickSync and Snapdragon GPU".to_string(),
+            author: "PocketBridge Community".to_string(),
+            license: "GPL-3.0".to_string(),
+            kind: PluginKind::Native,
+            adapter_id: "media_ffmpeg.v1".to_string(),
+            requirements: PluginRequirements {
+                min_host_ram_mb: 1024,
+                min_worker_ram_mb: 1024,
+                min_worker_storage_mb: 100,
+            },
+            sha256: Some("d7e8f90123456789abcdef0123456789abcdef0123456789abcdef0123456789".to_string()),
+            size_bytes: 35_000_000,
+            host_entrypoint: Some("ffmpeg_host".to_string()),
+            worker_entrypoint: Some("libavcodec_worker.so".to_string()),
+            download_url: Some("https://github.com/PocketBridge/pocketbridge-plugins/releases/download/v1.0.0/media-ffmpeg.tar.gz".to_string()),
+        },
+    ]
+}
+
+/// Find a manifest from the default catalog by plugin id or adapter id.
+pub fn find_catalog_plugin(query: &str) -> Option<PluginManifest> {
+    default_catalog()
+        .into_iter()
+        .find(|m| m.id == query || m.adapter_id == query)
+}

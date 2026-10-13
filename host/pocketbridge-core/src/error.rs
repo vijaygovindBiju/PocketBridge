@@ -43,4 +43,7 @@ pub enum PocketBridgeError {
 
     #[error("Fleet error: {0}")]
     FleetError(String),
+
+    #[error("Plugin error: {0}")]
+    PluginError(String),
 }

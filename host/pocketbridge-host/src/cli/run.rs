@@ -38,7 +38,20 @@ pub async fn execute(
         }
     };
 
-    let adapter = registry.get(adapter_id).context("Adapter not found in registry")?;
+    let adapter = match registry.get(adapter_id) {
+        Some(a) => a,
+        None => {
+            let plugin_hint = match adapter_id {
+                "image_batch.v1" => "image-batch",
+                "data_analytics.v1" => "data-analytics",
+                other => other,
+            };
+            anyhow::bail!(
+                "Workload adapter '{}' is not installed in the core engine.\nTo install it as a plugin, run: pocketbridge plugin install {}",
+                adapter_id, plugin_hint
+            );
+        }
+    };
 
     println!("PocketBridge Compute Workload Runner ({adapter_id})");
     println!("==========================================================================");

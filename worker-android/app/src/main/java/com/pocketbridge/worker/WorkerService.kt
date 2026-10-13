@@ -33,6 +33,7 @@ import com.pocketbridge.worker.protocol.JobStartedPayload
 import com.pocketbridge.worker.protocol.MessageKind
 import com.pocketbridge.worker.protocol.ResultManifestPayload
 import com.pocketbridge.worker.protocol.SubmitJobPayload
+import com.pocketbridge.worker.plugin.WorkerPluginManager
 import com.pocketbridge.worker.receiver.PowerStateReceiver
 import com.pocketbridge.worker.runtime.ChunkTransformEngine
 import com.pocketbridge.worker.runtime.DataAnalyticsEngine
@@ -95,10 +96,12 @@ class WorkerService : Service() {
 
     private lateinit var wakeLockManager: WakeLockManager
     private lateinit var thermalMonitor: ThermalMonitor
+    private lateinit var pluginManager: WorkerPluginManager
     private val powerStateReceiver = PowerStateReceiver()
 
     override fun onCreate() {
         super.onCreate()
+        pluginManager = WorkerPluginManager(this)
         wakeLockManager = WakeLockManager(this)
         thermalMonitor = ThermalMonitor(this).apply { start() }
         powerStateReceiver.register(this)
@@ -473,7 +476,12 @@ class WorkerService : Service() {
                             }
 
                             else -> {
-                                val rej = JobRejectedPayload(submit.jobId, "Unsupported adapter: ${submit.adapterId}", "UNSUPPORTED_ADAPTER")
+                                val errMsg = if (!pluginManager.isPluginInstalled(submit.adapterId)) {
+                                    "Plugin '${submit.adapterId}' is not installed on worker phone. Install it from host using 'pocketbridge plugin install <id>'."
+                                } else {
+                                    "Unsupported or unconfigured plugin adapter: ${submit.adapterId}"
+                                }
+                                val rej = JobRejectedPayload(submit.jobId, errMsg, "UNSUPPORTED_ADAPTER")
                                 val rejEnv = Envelope(kind = MessageKind.JOB_REJECTED, payload = gson.toJsonTree(rej))
                                 FrameCodec.writeEnvelope(dataOut, rejEnv, gson)
                             }
