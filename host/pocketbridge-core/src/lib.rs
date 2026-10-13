@@ -6,10 +6,20 @@ pub mod fleet;
 pub mod job;
 pub mod profiler;
 pub mod protocol;
+pub mod ai;
+pub mod browser;
 pub mod scheduler;
 pub mod transport;
 pub mod universal;
 
+pub use ai::{
+    ActivationTensorPayload, ModelPipelineConfig, SpeculativeCoordinator, SpeculativeRoundResult,
+    AI_PIPELINE_ADAPTER_ID,
+};
+pub use browser::{
+    BrowserRendererRouter, BrowserTabDescriptor, TabExecutionTarget, TabRenderPayload,
+    TabRenderStatus, BROWSER_ADAPTER_ID,
+};
 pub use universal::{
     PartitionStrategy, UniversalExecPayload, UniversalExecResult, UniversalPartitionPlan,
     UniversalPartitioner, UNIVERSAL_ADAPTER_ID,
