@@ -24,6 +24,85 @@ impl PartitionConfig {
             host_ratio: host_ratio.clamp(0.01, 0.99),
         }
     }
+
+    /// Automatically calculate optimal host vs worker ratio based on live hardware capability profiles.
+    pub fn from_device_profiles(
+        host: &crate::profiler::DeviceProfile,
+        worker: &crate::profiler::DeviceProfile,
+        host_load_factor: f64,
+    ) -> (Self, String) {
+        // 1. Calculate raw compute score for host (Intel laptop)
+        // IPC baseline ~1.0, scaled by available capacity factor (e.g. 1.0 = idle, 0.2 = heavy compile load)
+        let host_cores = (host.cpu_cores as f64).max(1.0);
+        let host_capacity = host_load_factor.clamp(0.1, 1.0);
+        let host_score = host_cores * 2.8 * host_capacity;
+
+        // 2. Calculate raw compute score for worker (Android phone)
+        let worker_cores = (worker.cpu_cores as f64).max(1.0);
+        
+        // Estimate ARM IPC / frequency based on SoC model
+        let freq_ghz = if let Some(soc) = &worker.soc {
+            let soc_lower = soc.to_lowercase();
+            if soc_lower.contains("8750") || soc_lower.contains("elite") || soc_lower.contains("8 gen 4") {
+                4.32 // Snapdragon 8 Elite Oryon custom cores
+            } else if soc_lower.contains("8 gen 3") || soc_lower.contains("8 gen 2") {
+                3.36
+            } else if soc_lower.contains("dimensity 9300") || soc_lower.contains("9400") {
+                3.40
+            } else {
+                2.40 // Standard mid-range ARM SoC
+            }
+        } else if let Some(model) = &worker.device_model {
+            let m_lower = model.to_lowercase();
+            if m_lower.contains("s938") || m_lower.contains("s25") {
+                4.32
+            } else if m_lower.contains("s928") || m_lower.contains("s24") {
+                3.36
+            } else {
+                2.40
+            }
+        } else {
+            2.40
+        };
+
+        // 3. Thermal & Battery Health Multiplier
+        let mut health_multiplier = 1.0;
+
+        // Battery health gate
+        if let Some(pct) = worker.battery_percent {
+            let is_charging = worker.battery_charging.unwrap_or(false);
+            if pct < 20 && !is_charging {
+                health_multiplier = 0.05; // Critical battery: do not drain user's phone
+            } else if pct < 35 && !is_charging {
+                health_multiplier = 0.50; // Low battery: throttle worker partition
+            }
+        }
+
+        // Thermal throttle gate
+        if let Some(thermal) = &worker.thermal_status {
+            match thermal.to_lowercase().as_str() {
+                "severe" | "critical" => health_multiplier = 0.05,
+                "moderate" => health_multiplier *= 0.50,
+                "light" => health_multiplier *= 0.85,
+                _ => {}
+            }
+        }
+
+        let worker_score = worker_cores * freq_ghz * health_multiplier;
+
+        // 4. Compute proportional partition ratio
+        let total_score = host_score + worker_score;
+        let calculated_host_ratio = (host_score / total_score).clamp(0.10, 0.95);
+
+        let rationale = format!(
+            "Dynamic partition calibrated: Host score {:.1} ({} cores @ {:.0}% cap), Phone score {:.1} ({} cores, {:.2} GHz, health multiplier {:.2}) -> {:.1}% Host / {:.1}% Phone",
+            host_score, host.cpu_cores, host_capacity * 100.0,
+            worker_score, worker.cpu_cores, freq_ghz, health_multiplier,
+            calculated_host_ratio * 100.0, (1.0 - calculated_host_ratio) * 100.0
+        );
+
+        (Self::new(calculated_host_ratio), rationale)
+    }
 }
 
 /// Partition an adapter workload's parameters into host slice and worker slice.

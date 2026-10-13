@@ -18,7 +18,7 @@ pub async fn execute(
     local_only: bool,
     remote_only: bool,
     hybrid: bool,
-    host_ratio: f64,
+    host_ratio: Option<f64>,
     host_load: f64,
     margin: f64,
     port: u16,
@@ -196,12 +196,52 @@ pub async fn execute(
         let worker_hello: HelloPayload = serde_json::from_value(reply.payload)?;
         println!("   Handshook with worker: {} (v{})\n", worker_hello.agent_name, worker_hello.agent_version);
 
+        println!(">> Calibrating workload partition ratio based on device capability profiles...");
+        let effective_host_ratio = match host_ratio {
+            Some(explicit) => {
+                println!("   User manual override: {:.1}% Host / {:.1}% Phone", explicit * 100.0, (1.0 - explicit) * 100.0);
+                explicit
+            }
+            None => {
+                let host_prof = pocketbridge_core::profiler::collect_host_profile().await
+                    .unwrap_or_else(|_| DeviceProfile {
+                        role: "host".into(),
+                        hostname: None,
+                        os: "Linux".into(),
+                        os_version: "".into(),
+                        architecture: "x86_64".into(),
+                        cpu_model: "Intel Host CPU".into(),
+                        cpu_cores: 8,
+                        ram_total_bytes: 16 * 1024 * 1024 * 1024,
+                        ram_available_bytes: None,
+                        gpu: None,
+                        storage_total_bytes: None,
+                        storage_available_bytes: None,
+                        android_api_level: None,
+                        device_model: None,
+                        soc: None,
+                        battery_percent: None,
+                        battery_charging: None,
+                        thermal_status: None,
+                    });
+
+                if let Some(w_prof) = &worker_profile {
+                    let (cfg, rationale) = pocketbridge_core::PartitionConfig::from_device_profiles(&host_prof, w_prof, host_load);
+                    println!("   [DYNAMIC ALLOCATION] {rationale}");
+                    cfg.host_ratio
+                } else {
+                    println!("   Fallback default partition: 50.0% Host / 50.0% Phone");
+                    0.5
+                }
+            }
+        };
+
         println!(">> Launching concurrent hybrid execution across Laptop and Phone...");
         let co_res = CoProcessor::execute_hybrid(
             &mut stream,
             adapter_id,
             &params_json,
-            host_ratio,
+            effective_host_ratio,
             |fraction, msg| {
                 print!("\r   Progress: [{:>3.0}%] {}", fraction * 100.0, msg);
                 use std::io::Write;
