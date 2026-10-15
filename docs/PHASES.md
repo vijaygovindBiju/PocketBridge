@@ -30,9 +30,9 @@ flowchart LR
 
 | Phase | Target Version | Milestone Name | Status | Key Deliverable | Verified Environment |
 | :---: | :---: | :--- | :---: | :--- | :--- |
-| **0** | `v0.1.0` | **Feasibility & Link Foundation** | `COMPLETED` | USB-C ADB framing, latency ping, 100MB throughput tests, hardware profiler, Ratatui TUI | Arch Linux + Samsung Galaxy S25 Ultra (Snapdragon 8 Elite, 370 Mbps) |
-| **1** | `v0.2.0` | **Vertical Slice & Deterministic Workload** | `COMPLETED` | `chunk_transform.v1` compute engine, SHA-256 equivalence validation, speedup measurement | Arch Linux + Samsung Galaxy S25 Ultra (Bit-for-bit SHA-256 verified) |
-| **2** | `v0.3.0` | **Job Lifecycle & Reliability** | `COMPLETED` | Full protocol envelopes (`SUBMIT`, `ACCEPTED`, `STARTED`, `PROGRESS`, `RESULT`, `CANCEL`), $O(1)$ streaming | Arch Linux + Samsung Galaxy S25 Ultra (100MB stream verified) |
+| **0** | `v0.1.0` | **Feasibility & Link Foundation** | `COMPLETED` | USB-C ADB framing, latency ping, 100MB throughput tests, hardware profiler, Ratatui TUI | Host-tested on Arch Linux (Physical phone execution awaiting connection) |
+| **1** | `v0.2.0` | **Vertical Slice & Deterministic Workload** | `COMPLETED` | `chunk_transform.v1` compute engine, SHA-256 equivalence validation, speedup measurement | Host-tested on Arch Linux (Physical phone execution awaiting connection) |
+| **2** | `v0.3.0` | **Job Lifecycle & Reliability** | `COMPLETED` | Full protocol envelopes (`SUBMIT`, `ACCEPTED`, `STARTED`, `PROGRESS`, `RESULT`, `CANCEL`), $O(1)$ streaming | Host-tested on Arch Linux (Physical phone execution awaiting connection) |
 | **3** | `v0.4.0` | **Explainable Scheduler & Cost Model** | `IN PROGRESS` | Analytical cost-benefit engine, battery/thermal constraint gates, human-readable offload rationale | Planned Next |
 | **OPT-A** | `v0.4.1` | **Phone NDK & Hardware Acceleration** | `PLANNED` | Android NDK `aarch64` native engine, ARM NEON SIMD, Oryon Prime core pinning (4.32 GHz) | Target: Galaxy S25 Ultra |
 | **OPT-B** | `v0.4.2` | **Laptop P-Core Tuning & AVX2 Vectorization** | `PLANNED` | `target-cpu=native` AVX2/SHA-NI compiler flags, P-core thread affinity, Linux performance governor | Target: Intel i5-13420H |
@@ -66,9 +66,9 @@ flowchart LR
    - Implemented 4-byte big-endian header indicating payload length followed by JSON UTF-8 payload.
    - Built `FramedSocket` in Rust and `WorkerService` in Kotlin with zero payload tearing.
 2. **Ping & Latency Benchmarking:**
-   - Built bidirectional timestamp ping suite; measured **~1.8 ms median latency** over ADB USB-C tunnel.
+   - Built bidirectional timestamp ping suite to measure round-trip latency over the ADB tunnel.
 3. **Throughput & Bandwidth Benchmarking:**
-   - Evaluated 1 MB, 10 MB, and 100 MB synthetic payloads over USB-C; achieved **~28 MB/s to ~35 MB/s** sustained throughput.
+   - Built 1 MB, 10 MB, and 100 MB streaming payload benchmark harness with zero-copy chunked framing over USB-C.
 4. **Hardware Profilers:**
    - Host: CPU model, core count, architecture (`x86_64`), total/available RAM (`/proc/meminfo`), kernel version.
    - Android Worker: Device model, SoC ABI (`arm64-v8a`), total/free RAM (`ActivityManager`), battery %, thermal status.
@@ -77,7 +77,7 @@ flowchart LR
    - Configured live log window and automated ADB port forwarding (`adb forward tcp:9876 tcp:9876`).
 
 #### Exit Criteria & Verification Evidence
-- [x] Round-trip latency consistently $< 5 \text{ ms}$ over USB-C.
+- [x] Wire framing and ping protocol verified with sub-millisecond serialization overhead.
 - [x] Zero payload corruption across 100 MB streaming runs.
 - [x] Interactive TUI responds dynamically to connection and disconnect events.
 
@@ -183,8 +183,8 @@ flowchart LR
 #### Exit Criteria & Verification Evidence
 - [x] Unit tests verify cost model accuracy against benchmark history (6/6 passing in `host/pocketbridge-core/tests/scheduler_tests.rs`).
 - [x] Synthetic thermal, battery, and link latency mock tests correctly reject offloading.
-- [x] Scheduler never submits tasks when transfer overhead dominates compute time (verified: 500k records kept local on idle host with 0.07x predicted speedup; offload approved under heavy host load at 1.32x speedup).
-- [x] Verified live on physical Samsung Galaxy S25 Ultra over ADB USB-C link.
+- [x] Scheduler never submits tasks when transfer overhead dominates compute time (verified analytically: 500k records kept local on idle host with 0.07x predicted speedup; offload approved under heavy host load at 1.32x speedup).
+- [ ] Verified live on physical Samsung Galaxy S25 Ultra over ADB USB-C link (awaiting physical device connection).
 
 ---
 
@@ -464,15 +464,15 @@ To ensure maximum performance in realistic, production environments, PocketBridg
 #### Detailed Implementation Steps
 1. **Transformer Pipeline Parallelism (Layer Splitting):**
    - Configured `ModelPipelineConfig` dynamically partitioning Transformer layers across laptop and phone.
-   - Verified that Float16 activation vector transfer ($\sim 8\text{ KB}$ per token) takes $< 0.2\text{ ms}$ over the USB link (`test_ai_pipeline_layer_partitioning`).
+   - Verified that Float16 activation vector transfer ($\sim 8\text{ KB}$ per token) takes $< 0.2\text{ ms}$ under baseline link budget (`test_ai_pipeline_layer_partitioning`).
 2. **Speculative Decoding Engine:**
    - Implemented `SpeculativeCoordinator` evaluating draft token generation on phone NPU alongside parallel verification passes on laptop CPU.
-   - Demonstrated $> 3.0\text{x}$ effective speedup over single-device sequential execution (`test_ai_speculative_decoding_speedup`).
+   - Validated speculative decoding arithmetic model (`test_ai_speculative_decoding_speedup`).
 
 #### Acceptance Criteria & Verification Evidence
-- [x] LLM pipeline parallelism activation latency verified at $< 0.2\text{ ms}$ over USB-C.
-- [x] Speculative decoding verified delivering $> 3.0\text{x}$ speedup.
-- [x] All 33/33 automated tests pass cleanly across the entire workspace (`cargo test`).
+- [x] LLM pipeline parallelism activation latency calculated at $< 0.2\text{ ms}$ under baseline link budget.
+- [x] Speculative decoding analytical formulation verified.
+- [x] All automated tests pass cleanly across the entire workspace (`cargo test`).
 - [x] Host release binary and Android APK build cleanly (`./gradlew assembleRelease`).
 
 ---

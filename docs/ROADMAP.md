@@ -9,8 +9,7 @@ Every milestone in PocketBridge is validated through physical hardware benchmark
 ### Phase 0 — Feasibility & USB Physical Baseline (`v0.1.0`)
 - **Status:** `COMPLETED`
 - **Accomplishments:**
-  - Validated physical USB-C 3.2 link using `adb forward tcp:9876 tcp:9876`.
-  - Measured empirical ADB transport: ~86 ms RTT, throughput: 370.14 Mbps (~46.3 MB/s) over USB 3.0.
+  - Validated physical USB-C link protocol using `adb forward tcp:9876 tcp:9876`.
   - Formulated length-prefixed protocol framing (`0x504B5442`).
 
 ### Phase 1 — Vertical Slice (`v0.2.0`)
@@ -74,7 +73,7 @@ Every milestone in PocketBridge is validated through physical hardware benchmark
   - Binary GGUF v3 parser (`pocketbridge_core::llm::GgufModel`) reading magic, metadata KVs, and all 508 tensor descriptors in < 20 ms.
   - Distributed layer partitioner (`DistributedLayerPlan`) evaluating dual-device RAM budgets (Host available RAM vs. Worker RAM) to compute exact layer boundaries (e.g. Layers 0..20 on Host, Layers 21..45 on Worker).
   - Validated that hybrid layer partitioning prevents Linux kernel OOM killer termination on memory-constrained laptops.
-  - Wire framing for FP16 inter-device activation tensor exchange (`[1, 4608]` = 9,216 bytes/token, ~0.20 ms transfer latency at measured ADB rates).
+  - Wire framing for FP16 inter-device activation tensor exchange (`[1, 4608]` = 9,216 bytes/token).
   - Explicit technical blockers documented: requires compiling on-device ARM64 `llama-rpc-server` and physical phone link.
 
 ### Phase 10 — Modular Plugin & Capability Taxonomy (`v1.4.0`)

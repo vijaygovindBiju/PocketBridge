@@ -184,10 +184,10 @@ The integration mechanism was audited directly against the upstream `llama.cpp` 
 
 ### 5.4 Wire Latency Over USB
 - **Activation Vector:** Hidden state passed across layer boundary is $[1, 4608]$ in FP16 = **9,216 bytes per token**.
-- **ADB USB-C Throughput:** Measured empirical link rate is **370.14 Mbps** (~46.27 MB/s).
+- **ADB USB-C Throughput:** Baseline link budget estimate is **350.0 Mbps** (~43.75 MB/s) (pending live measurement via `pocketbridge bench` upon physical connection).
 - **Transfer Latency per Token:**
-  $$\text{Transfer Time} = \frac{9,216 \text{ bytes}}{46,267,500 \text{ bytes/sec}} \approx 0.000199 \text{ s} \approx \mathbf{0.199\text{ ms / token}}$$
-- **Significance:** At 0.199 ms per token, USB-C transfer latency represents less than **0.2%** of token generation time (~80–120 ms/token on CPU/NPU). Inter-device bandwidth is **not** a bottleneck.
+  $$\text{Transfer Time} = \frac{9,216 \text{ bytes}}{43,750,000 \text{ bytes/sec}} \approx 0.000210 \text{ s} \approx \mathbf{0.210\text{ ms / token}}$$
+- **Significance:** At 0.210 ms per token, USB-C transfer latency represents less than **0.3%** of token generation time (~80–120 ms/token on CPU/NPU). Inter-device bandwidth is **not** a bottleneck.
 
 ---
 

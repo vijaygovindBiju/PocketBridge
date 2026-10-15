@@ -121,14 +121,14 @@ pub fn plan(
         8_000_000_000u64
     };
 
-    // Empirical measured ADB bandwidth (~370.14 Mbps)
-    let measured_adb_mbps = 370.14;
+    // Baseline USB link budget estimate (empirical rate measured via `pocketbridge bench` when connected)
+    let baseline_link_mbps = 350.0;
 
     let plan = DistributedLayerPlan::plan(
         &model,
         host_avail_bytes,
         worker_avail_bytes,
-        measured_adb_mbps,
+        baseline_link_mbps,
     );
 
     let host_kv_2k = model.kv_cache_bytes(2048, plan.host_layers_count) as f64 / 1e9;
@@ -159,7 +159,7 @@ pub fn plan(
     println!("--------------------------------------------------------------------------");
     println!("WIRE ACTIVATION PIPELINE TRANSFER:");
     println!("• Inter-Device Activation:   {} bytes per token (FP16 hidden state [1, {}])", plan.activation_tensor_bytes_per_token, model.embedding_length);
-    println!("• Transfer Latency over USB: {:.3} ms / token (at measured {:.1} Mbps ADB rate)", plan.activation_transfer_ms_est, plan.adb_link_bandwidth_mbps);
+    println!("• Transfer Latency over USB: {:.3} ms / token (at baseline {:.1} Mbps link estimate)", plan.activation_transfer_ms_est, plan.adb_link_bandwidth_mbps);
     println!("--------------------------------------------------------------------------");
     println!("FEASIBILITY & STATUS CHECK:");
     println!("• Standalone Laptop Run:     {}", if plan.can_execute_on_host_alone { "Feasible" } else { "FAILS (triggers Linux kernel OOM-killer) ❌" });

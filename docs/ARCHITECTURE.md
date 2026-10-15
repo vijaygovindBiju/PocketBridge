@@ -4,7 +4,7 @@
 
 PocketBridge establishes an asymmetric co-processing architecture between an Arch Linux host (laptop) and an attached Android phone (worker). The host maintains policy, scheduling, and job state, while the mobile worker advertises hardware capabilities, enforces thermal/power safety gates, and executes supported workload slices via native NDK kernels or dynamically loaded plugin engines.
 
-Communication is strictly wired over a physical USB-C cable (`127.0.0.1:9876` via ADB port forwarding), ensuring zero Wi-Fi attack surface, measured empirical round-trip latency (~86 ms RTT over ADB userspace port forwarding), and empirical sustained payload throughput of ~370 Mbps (~46 MB/s) over USB 3.0.
+Communication is strictly wired over a physical USB-C cable (`127.0.0.1:9876` and `127.0.0.1:50052` via ADB port forwarding), ensuring zero Wi-Fi attack surface.
 
 ```mermaid
 flowchart TB

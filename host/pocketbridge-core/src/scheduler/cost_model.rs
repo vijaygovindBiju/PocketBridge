@@ -8,23 +8,23 @@ pub struct PerformanceBaseline {
     pub host_ops_per_sec: f64,
     /// Phone compute rate in mathematical operations per second (all available cores)
     pub phone_ops_per_sec: f64,
-    /// USB-C ADB measured link bandwidth in bytes per second
+    /// USB-C ADB link bandwidth budget in bytes per second
     pub link_bandwidth_bytes_per_sec: f64,
     /// Round-trip ping latency over USB-C in milliseconds
     pub link_rtt_ms: f64,
 }
 
 impl Default for PerformanceBaseline {
-    /// Default baseline calibrated from Arch Linux (i5-13420H) and Samsung Galaxy S25 Ultra (Snapdragon 8 Elite).
+    /// Default baseline calibrated from Arch Linux (i5-13420H) and Snapdragon 8 Elite specifications.
     fn default() -> Self {
         Self {
             // ~32M ops/sec on 12-thread i5-13420H (2M records * 50 rounds = 100M ops in 62ms => ~1.6B loop ops/sec or 32M records/sec)
             host_ops_per_sec: 32_170_000.0,
             // ~8.2M records/sec on 8-core Snapdragon 8 Elite in Kotlin (2M records in 243ms)
             phone_ops_per_sec: 8_230_000.0,
-            // Measured ~46.25 MB/s (370 Mbps) sustained throughput over USB-C ADB
-            link_bandwidth_bytes_per_sec: 46_250_000.0,
-            // Measured round-trip latency over USB-C tunnel
+            // Baseline ~43.75 MB/s (350 Mbps) link budget estimate over USB-C ADB
+            link_bandwidth_bytes_per_sec: 43_750_000.0,
+            // Baseline round-trip latency estimate over USB-C tunnel
             link_rtt_ms: 2.0,
         }
     }
