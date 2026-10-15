@@ -7,7 +7,7 @@ edition.workspace = true
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0"
-tokio = { version = "1", features = ["io-util", "net", "time", "process", "macros", "fs", "sync"] }
+tokio = { version = "1", features = ["io-util", "net", "time", "process", "macros", "fs", "sync", "rt"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 sha2 = "0.10"

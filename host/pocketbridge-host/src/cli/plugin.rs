@@ -39,7 +39,7 @@ pub async fn execute(cmd: PluginCommands) -> Result<()> {
             println!("Plugins Directory: {}\n", manager.plugins_dir().display());
 
             println!("[Built-in Core Hardware Engine] (Zero-download offline link verification)");
-            println!("  * {:<16} {:<10} {}", ADAPTER_ID, "[BUILT-IN]", "SIMD Micro-Kernel Hardware Calibration & Benchmark");
+            println!("  * {:<16} {:<10} SIMD Micro-Kernel Hardware Calibration & Benchmark", ADAPTER_ID, "[BUILT-IN]");
             println!();
 
             let installed = manager.list_installed();

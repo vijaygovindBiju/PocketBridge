@@ -89,7 +89,7 @@ pub fn execute_analytics(params: &DataAnalyticsParams) -> (String, u64, u64) {
         .map(|n| n.get())
         .unwrap_or(4);
 
-    let chunk_size = ((params.record_count as usize) + num_threads - 1) / num_threads;
+    let chunk_size = (params.record_count as usize).div_ceil(num_threads);
     let mut thread_buffers = vec![(Vec::new(), 0u64, 0u64); num_threads];
 
     std::thread::scope(|s| {

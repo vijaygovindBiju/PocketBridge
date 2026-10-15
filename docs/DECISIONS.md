@@ -32,7 +32,7 @@ These records document architectural and design decisions, trade-offs, and histo
 
 **Decision:** Use an ADB-forwarded local TCP channel (`127.0.0.1:9876`) over a physical USB-C cable.
 
-**Reasoning:** Physical USB-C delivers sub-millisecond RTT (~0.18 ms) and > 125 MB/s throughput without exposing any Wi-Fi/LAN attack surface. ADB port forwarding operates seamlessly on non-rooted Android devices.
+**Reasoning:** Physical USB-C delivers reliable wired communication (~86 ms RTT and ~370 Mbps throughput over ADB port forwarding) without exposing any Wi-Fi/LAN attack surface. ADB port forwarding operates seamlessly on non-rooted Android devices.
 
 **Consequence:** Requires developer options and USB debugging enabled on the worker phone. Wi-Fi transport is strictly excluded.
 

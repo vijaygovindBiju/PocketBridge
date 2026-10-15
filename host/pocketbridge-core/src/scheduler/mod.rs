@@ -12,18 +12,10 @@ use crate::profiler::DeviceProfile;
 
 /// High-level Explainable Scheduler coordinating analytical cost modeling and safety policies.
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct Scheduler {
     pub config: SchedulerConfig,
     pub cost_model: CostModel,
-}
-
-impl Default for Scheduler {
-    fn default() -> Self {
-        Self {
-            config: SchedulerConfig::default(),
-            cost_model: CostModel::default(),
-        }
-    }
 }
 
 impl Scheduler {
@@ -62,10 +54,7 @@ impl Scheduler {
 
         let thermal_status = worker_profile.and_then(|p| p.thermal_status.clone());
         let thermal_ok = if self.config.reject_severe_thermal {
-            match thermal_status.as_deref() {
-                Some("severe") | Some("critical") | Some("emergency") | Some("shutdown") => false,
-                _ => true,
-            }
+            !matches!(thermal_status.as_deref(), Some("severe") | Some("critical") | Some("emergency") | Some("shutdown"))
         } else {
             true
         };

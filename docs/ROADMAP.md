@@ -10,7 +10,7 @@ Every milestone in PocketBridge is validated through physical hardware benchmark
 - **Status:** `COMPLETED`
 - **Accomplishments:**
   - Validated physical USB-C 3.2 link using `adb forward tcp:9876 tcp:9876`.
-  - Measured baseline RTT: ~0.18 ms, throughput: > 125 MB/s.
+  - Measured empirical ADB transport: ~86 ms RTT, throughput: 370.14 Mbps (~46.3 MB/s) over USB 3.0.
   - Formulated length-prefixed protocol framing (`0x504B5442`).
 
 ### Phase 1 — Vertical Slice (`v0.2.0`)
@@ -57,29 +57,36 @@ Every milestone in PocketBridge is validated through physical hardware benchmark
   - Full automated CI/CD pipeline, signed binaries, clean test suites.
 
 ### Phase 7 — Universal Process Partitioning (`v1.1.0`)
-- **Status:** `COMPLETED`
+- **Status:** `PARTIALLY IMPLEMENTED` (Local stream slicing: `Implemented`; Remote arbitrary binary execution: `Scaffolded`)
 - **Accomplishments:**
-  - Transparent CLI proxy: `pocketbridge exec -- [COMMAND] [ARGS]`.
-  - Slices streams by line, byte chunk, or item across laptop and phone.
+  - Streaming partitioner: line-by-line, byte chunk, or item slicing in Rust host.
+  - Remote proxy returns explicit error (`CapabilityStatus::Scaffolded`) explaining that arbitrary host Linux ELF binaries cannot run natively on Android without an on-device worker package.
 
 ### Phase 8 — Headless Browser Tab Offloading (`v1.2.0`)
-- **Status:** `COMPLETED`
+- **Status:** `PLANNED`
 - **Accomplishments:**
-  - `BrowserRendererRouter` separating active tabs on host from background tabs on phone WebView.
+  - Architecture defined in `BrowserRendererRouter`.
+  - All fake/simulated execution paths removed from production catalog.
 
-### Phase 9 — AI Pipeline Splitting & Speculative Decoding (`v1.3.0`)
-- **Status:** `COMPLETED`
+### Phase 9 — Binary GGUF Model Parser & Distributed Layer Partitioning (`v1.3.0`)
+- **Status:** `HARDWARE-TESTED (GGUF Binary Parsing & Layer Partition Planning)`
 - **Accomplishments:**
-  - `ModelPipelineConfig` layer splitting across devices with < 0.2 ms activation transfer over USB.
-  - `SpeculativeCoordinator` evaluating phone NPU draft generation and host verification.
+  - Binary GGUF v3 parser (`pocketbridge_core::llm::GgufModel`) reading magic, metadata KVs, and all 508 tensor descriptors in < 20 ms.
+  - Distributed layer partitioner (`DistributedLayerPlan`) evaluating dual-device RAM budgets (Host available RAM vs. Worker RAM) to compute exact layer boundaries (e.g. Layers 0..20 on Host, Layers 21..45 on Worker).
+  - Validated that hybrid layer partitioning prevents Linux kernel OOM killer termination on memory-constrained laptops.
+  - Wire framing for FP16 inter-device activation tensor exchange (`[1, 4608]` = 9,216 bytes/token, ~0.20 ms transfer latency at measured ADB rates).
+  - Explicit technical blockers documented: requires compiling on-device ARM64 `llama-rpc-server` and physical phone link.
 
-### Phase 10 — Modular Plugin & AI Model Hub (`v1.4.0`)
-- **Status:** `COMPLETED`
+### Phase 10 — Modular Plugin & Capability Taxonomy (`v1.4.0`)
+- **Status:** `COMPLETED (Zero Fake Implementations)`
 - **Accomplishments:**
-  - Option 2 Micro-Kernel Architecture: `chunk_transform.v1` stays as the sole built-in calibration benchmark.
-  - Decoupled community hub hosted at [pocketbridge-plugins](https://github.com/vijaygovindBiju/pocketbridge-plugins).
+  - Micro-Kernel Architecture: `chunk_transform.v1` (`HardwareTested`) is the core built-in benchmark.
+  - Decoupled community hub with 7-tier capability taxonomy metadata (`CapabilityStatus`).
+  - Strict catalog filtering: only verified `HardwareTested` plugins (`image-batch` and `data-analytics`) exist in production catalog.
+  - Unbacked plugins (`llm-llama`, `ai-whisper`, `browser-cdp`, `media-ffmpeg`, `phone-cluster`) classified as `Planned (Roadmap)` and isolated from execution paths.
+  - Removed all fake Android Kotlin mock engines (`AiWhisperEngine`, `BrowserCdpEngine`, `LlmModelEngine`, `MediaFfmpegEngine`, `PhoneClusterEngine`).
+  - Removed dummy simulation and fake progress loops from `DynamicPluginAdapter`.
   - CLI `pocketbridge plugin list/install/remove/info` with hardware pre-flight checks and SHA-256 verification.
-  - Mobile `WorkerPluginManager.kt` on Android worker.
 
 ---
 

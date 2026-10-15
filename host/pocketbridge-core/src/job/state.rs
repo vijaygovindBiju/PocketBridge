@@ -47,6 +47,7 @@ pub struct JobExecutionResult {
     pub remote_sha256: Option<String>,
     pub outputs_match: bool,
     pub records_processed: u64,
+    pub output_size_bytes: Option<usize>,
     pub error_message: Option<String>,
 }
 

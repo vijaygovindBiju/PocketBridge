@@ -34,6 +34,46 @@ pub enum PluginKind {
     WebHeadless,
 }
 
+/// Strict, non-interchangeable capability classification for workloads and plugins.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CapabilityStatus {
+    /// Functionality is implemented and executable in code.
+    Implemented,
+    /// Functionality has been tested on physical hardware (e.g. Android phone + Linux laptop).
+    HardwareTested,
+    /// Functionality has reproducible empirical benchmark results and validation.
+    BenchmarkVerified,
+    /// Implemented but still experimental / subject to validation.
+    Experimental,
+    /// Execution is simulated or a synthetic stress kernel; not real production processing.
+    Simulated,
+    /// Partial scaffolding without an operational end-to-end execution path.
+    Scaffolded,
+    /// Planned roadmap capability; not implemented yet.
+    Planned,
+}
+
+impl Default for CapabilityStatus {
+    fn default() -> Self {
+        Self::Experimental
+    }
+}
+
+impl std::fmt::Display for CapabilityStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Implemented => write!(f, "Implemented"),
+            Self::HardwareTested => write!(f, "Hardware-tested"),
+            Self::BenchmarkVerified => write!(f, "Benchmark-verified"),
+            Self::Experimental => write!(f, "Experimental"),
+            Self::Simulated => write!(f, "Simulated"),
+            Self::Scaffolded => write!(f, "Scaffolded"),
+            Self::Planned => write!(f, "Planned"),
+        }
+    }
+}
+
 /// Metadata and execution manifest for a PocketBridge plugin package.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PluginManifest {
@@ -53,6 +93,9 @@ pub struct PluginManifest {
     pub kind: PluginKind,
     /// The workload adapter identifier registered in the system (e.g., "image_batch.v1").
     pub adapter_id: String,
+    /// Strict, verified capability classification.
+    #[serde(default)]
+    pub capability_status: CapabilityStatus,
     /// Resource requirements for execution.
     pub requirements: PluginRequirements,
     /// Expected SHA-256 hash of the package payload.
@@ -90,6 +133,7 @@ impl PluginManifest {
             license: "Apache-2.0".to_string(),
             kind,
             adapter_id: adapter_id.into(),
+            capability_status: CapabilityStatus::Experimental,
             requirements: PluginRequirements::default(),
             sha256: None,
             size_bytes: 0,

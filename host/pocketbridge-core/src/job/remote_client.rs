@@ -103,6 +103,7 @@ impl RemoteJobClient {
                     remote_sha256: None,
                     outputs_match: false,
                     records_processed: 0,
+                    output_size_bytes: None,
                     error_message: Some(format!("Worker rejected: {} ({})", rejected.reason, rejected.code)),
                 });
             }
@@ -119,6 +120,7 @@ impl RemoteJobClient {
         let remote_sha256;
         let records_processed;
         let download_duration_ms;
+        let output_size_bytes;
 
         loop {
             let env = read_envelope(stream).await?;
@@ -140,6 +142,7 @@ impl RemoteJobClient {
                     remote_compute_ms = Some(manifest.compute_duration_ms as f64);
                     remote_sha256 = Some(manifest.output_sha256);
                     records_processed = manifest.records_processed;
+                    output_size_bytes = Some(manifest.output_size_bytes);
                     progress(1.0, "Result received and verified");
                     break;
                 }
@@ -159,6 +162,7 @@ impl RemoteJobClient {
                         remote_sha256: None,
                         outputs_match: false,
                         records_processed: 0,
+                        output_size_bytes: None,
                         error_message: Some(format!("Worker error: {} ({})", err.message, err.error_code)),
                     });
                 }
@@ -177,6 +181,7 @@ impl RemoteJobClient {
                         remote_sha256: None,
                         outputs_match: false,
                         records_processed: 0,
+                        output_size_bytes: None,
                         error_message: Some("Job cancelled by worker".into()),
                     });
                 }
@@ -207,6 +212,7 @@ impl RemoteJobClient {
             remote_sha256,
             outputs_match,
             records_processed,
+            output_size_bytes,
             error_message: if outputs_match {
                 None
             } else {

@@ -46,4 +46,10 @@ pub enum PocketBridgeError {
 
     #[error("Plugin error: {0}")]
     PluginError(String),
+
+    #[error("Model error: {0}")]
+    ModelError(String),
+
+    #[error("Unsupported operation: {0}")]
+    UnsupportedOperation(String),
 }

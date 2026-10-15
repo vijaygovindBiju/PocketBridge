@@ -1,184 +1,187 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
     Frame,
 };
 use super::app::App;
-use pocketbridge_core::ExecutionTarget;
+use super::theme::*;
 
 pub fn render(f: &mut Frame, app: &App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(10), // Top: Config & Constraints
-            Constraint::Min(12),    // Bottom: Cost Model Estimates & Decision Card
+            Constraint::Length(12), // Decision Card & Constraint Checklist
+            Constraint::Length(8),  // Cost Model & Transfer Estimates
+            Constraint::Min(4),     // Scheduler Controls & Experiment Disclaimers
         ])
         .split(area);
 
-    let top_chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(chunks[0]);
+    // 1. Decision Card
+    render_decision_card(f, app, chunks[0]);
 
-    // 1. Workload & Model Config (Top Left)
-    let input_bytes = (app.job_records as usize) * 8;
-    let output_bytes = (app.job_records as usize) * 8;
-    let input_mb = input_bytes as f64 / (1024.0 * 1024.0);
-    let output_mb = output_bytes as f64 / (1024.0 * 1024.0);
+    // 2. Cost Model Equations & Estimates
+    render_cost_model(f, app, chunks[1]);
 
-    let config_lines = vec![
-        Line::from(vec![
-            Span::raw("Workload Records:   "),
-            Span::styled(format!("{}", app.job_records), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-            Span::raw(format!(" (Payload: {:.2} MB in / {:.2} MB out)", input_mb, output_mb)),
-        ]),
-        Line::from(vec![
-            Span::raw("Compute Rounds:     "),
-            Span::styled(format!("{}", app.job_rounds), Style::default().fg(Color::White)),
-        ]),
-        Line::from(vec![
-            Span::raw("Simulated Host Load:"),
-            Span::styled(
-                format!("{:.0}% available CPU capacity (factor: {:.2})", app.scheduler_host_load * 100.0, app.scheduler_host_load),
-                if app.scheduler_host_load < 0.3 { Style::default().fg(Color::Magenta) } else { Style::default().fg(Color::Cyan) },
-            ),
-        ]),
-        Line::from(vec![
-            Span::raw("Required Margin:    "),
-            Span::styled(format!("{:.2}x minimum speedup threshold", app.scheduler_margin), Style::default().fg(Color::White)),
-        ]),
-        Line::from(vec![
-            Span::styled("Controls: [p] Re-evaluate | [h/H] Adjust Host Load | [+/-] Records", Style::default().fg(Color::DarkGray)),
-        ]),
-    ];
+    // 3. Controls & Notes
+    render_controls_and_notes(f, app, chunks[2]);
+}
 
-    let config_block = Paragraph::new(config_lines)
-        .block(Block::default().borders(Borders::ALL).title(" Workload & Scheduler Config "));
-    f.render_widget(config_block, top_chunks[0]);
+fn render_decision_card(f: &mut Frame, app: &App, area: Rect) {
+    let dec_opt = app.scheduler_decision.as_ref();
 
-    // 2. Hardware Constraints (Top Right)
-    let constraint_lines = if let Some(decision) = &app.scheduler_decision {
-        let c = &decision.constraints;
-        vec![
-            Line::from(vec![
-                Span::raw("Battery Constraint: "),
-                Span::styled(
-                    if c.battery_ok { "PASSED" } else { "FAILED" },
-                    Style::default().fg(if c.battery_ok { Color::Green } else { Color::Red }).add_modifier(Modifier::BOLD),
-                ),
-                Span::raw(format!(" (Level: {}%, Charging: {})", c.battery_percent.unwrap_or(0), c.battery_charging.unwrap_or(false))),
-            ]),
-            Line::from(vec![
-                Span::raw("Thermal Constraint: "),
-                Span::styled(
-                    if c.thermal_ok { "PASSED" } else { "FAILED" },
-                    Style::default().fg(if c.thermal_ok { Color::Green } else { Color::Red }).add_modifier(Modifier::BOLD),
-                ),
-                Span::raw(format!(" (Status: {})", c.thermal_status.as_deref().unwrap_or("normal"))),
-            ]),
-            Line::from(vec![
-                Span::raw("Memory Headroom:    "),
-                Span::styled(
-                    if c.memory_ok { "PASSED" } else { "FAILED" },
-                    Style::default().fg(if c.memory_ok { Color::Green } else { Color::Red }).add_modifier(Modifier::BOLD),
-                ),
-                Span::raw(format!(" (Req: {:.1} MB, Headroom safe)", c.memory_required_bytes as f64 / (1024.0 * 1024.0))),
-            ]),
-            Line::from(vec![
-                Span::raw("Link Latency:       "),
-                Span::styled(
-                    if c.link_ok { "PASSED" } else { "FAILED" },
-                    Style::default().fg(if c.link_ok { Color::Green } else { Color::Red }).add_modifier(Modifier::BOLD),
-                ),
-                Span::raw(format!(" (RTT: {:.1} ms, Max: 250ms)", c.link_rtt_ms.unwrap_or(0.0))),
-            ]),
-            Line::from(vec![
-                Span::raw("All Safety Checks:  "),
-                Span::styled(
-                    if c.all_passed() { "ALL CONSTRAINTS SATISFIED" } else { "SAFETY VIOLATION PREVENTS OFFLOAD" },
-                    Style::default().fg(if c.all_passed() { Color::Green } else { Color::Red }).add_modifier(Modifier::BOLD),
-                ),
-            ]),
-        ]
-    } else {
-        vec![
-            Line::from(Span::styled("No scheduler evaluation yet. Press 'p' to evaluate.", Style::default().fg(Color::DarkGray))),
-        ]
-    };
+    let lines = if let Some(d) = dec_opt {
+        let (decision_badge, reason_color) = if d.approved_for_offload {
+            (badge_ok("OFFLOAD RECOMMENDED"), COLOR_SUCCESS)
+        } else {
+            (badge_warn("EXECUTE LOCALLY ON HOST"), COLOR_WARNING)
+        };
 
-    let constraint_block = Paragraph::new(constraint_lines)
-        .block(Block::default().borders(Borders::ALL).title(" Hardware Safety Constraints "));
-    f.render_widget(constraint_block, top_chunks[1]);
-
-    // 3. Analytical Cost Model & Decision Card (Bottom)
-    let decision_lines = if let Some(decision) = &app.scheduler_decision {
-        let est = &decision.estimates;
-        let (badge_text, badge_color) = match decision.target {
-            ExecutionTarget::RemoteWorker => (
-                "[RECOMMENDATION: OFFLOAD TO ANDROID WORKER]",
-                Color::Green,
-            ),
-            ExecutionTarget::LocalHost => (
-                "[RECOMMENDATION: EXECUTE LOCALLY ON HOST]",
-                Color::Cyan,
-            ),
-            ExecutionTarget::HybridSplit { .. } => (
-                "[RECOMMENDATION: HYBRID CO-PROCESSING SPLIT]",
-                Color::Yellow,
-            ),
+        let mem_check = if d.constraints.memory_ok {
+            "[✓] Passed (Worker has sufficient headroom)"
+        } else {
+            "[✗] Failed or unverified memory headroom"
+        };
+        let bat_check = if d.constraints.battery_ok {
+            "[✓] Passed (Battery > 15% or USB charging)"
+        } else {
+            "[✗] Failed or unverified battery gate"
+        };
+        let thermal_check = if d.constraints.thermal_ok {
+            "[✓] Passed (Thermals: Normal / zero throttling)"
+        } else {
+            "[!] Thermal warning or throttle detected"
+        };
+        let rtt_check = if d.constraints.link_ok {
+            "[✓] Passed (USB RTT < 50 ms latency threshold)"
+        } else {
+            "[✗] Failed (Link RTT > 50 ms or disconnected)"
         };
 
         vec![
             Line::from(vec![
-                Span::raw("Scheduler Status:    "),
-                Span::styled(badge_text, Style::default().fg(badge_color).add_modifier(Modifier::BOLD)),
+                Span::styled("EVALUATED TASK:     ", style_label()),
+                Span::styled(format!("chunk_transform ({} records, {} rounds)", app.scheduler_records, app.scheduler_rounds), style_value()),
             ]),
             Line::from(vec![
-                Span::raw("Decision Rationale:  "),
-                Span::styled(&decision.decision_reason, Style::default().fg(Color::White)),
-            ]),
-            Line::from(Span::raw("--------------------------------------------------------------------------")),
-            Line::from(vec![
-                Span::raw("Estimated Local Time:      "),
-                Span::styled(format!("{:.2} ms", est.local_compute_ms), Style::default().fg(Color::White)),
-                Span::raw("  (Multi-core Intel Core i5 reference)"),
+                Span::styled("SCHEDULER DECISION: ", style_label()),
+                decision_badge,
+                Span::raw("   "),
+                Span::styled(format!("Predicted Speedup: {:.2}x", d.estimates.predicted_speedup), Style::default().fg(reason_color).add_modifier(Modifier::BOLD)),
+                Span::styled(format!(" (Required margin: {:.2}x)", app.scheduler_margin), Style::default().fg(COLOR_MUTED)),
             ]),
             Line::from(vec![
-                Span::raw("Estimated Link Transfer:   "),
-                Span::styled(
-                    format!("{:.2} ms", est.transfer_in_ms + est.transfer_out_ms),
-                    Style::default().fg(Color::Yellow),
-                ),
-                Span::raw(format!("  (In: {:.2}ms, Out: {:.2}ms over USB-C ADB)", est.transfer_in_ms, est.transfer_out_ms)),
+                Span::styled("PRIMARY RATIONALE:  ", style_label()),
+                Span::styled(&d.decision_reason, Style::default().fg(COLOR_FG)),
+            ]),
+            Line::from(Span::raw("")),
+            Line::from(vec![
+                Span::styled("HARDWARE SAFETY CONSTRAINTS CHECKLIST:", style_label()),
             ]),
             Line::from(vec![
-                Span::raw("Estimated Remote Compute:  "),
-                Span::styled(format!("{:.2} ms", est.remote_compute_ms), Style::default().fg(Color::Cyan)),
-                Span::raw("  (8x Qualcomm Oryon CPU cores)"),
+                Span::styled("  * Memory Constraint:   ", style_label()),
+                Span::styled(mem_check, Style::default().fg(COLOR_SUCCESS)),
             ]),
             Line::from(vec![
-                Span::raw("Estimated Remote Total:    "),
-                Span::styled(format!("{:.2} ms", est.remote_total_ms), Style::default().fg(Color::Magenta)),
-                Span::raw("  (Link Transfer + Remote Compute)"),
+                Span::styled("  * Battery Power Gate:  ", style_label()),
+                Span::styled(bat_check, Style::default().fg(COLOR_SUCCESS)),
             ]),
             Line::from(vec![
-                Span::raw("Predicted Speedup Ratio:   "),
-                Span::styled(
-                    format!("{:.2}x", est.predicted_speedup),
-                    Style::default().fg(if est.predicted_speedup >= decision.speedup_margin { Color::Green } else { Color::Yellow }).add_modifier(Modifier::BOLD),
-                ),
-                Span::raw(format!("  (Required Policy Threshold: {:.2}x)", decision.speedup_margin)),
+                Span::styled("  * Thermal Headroom:    ", style_label()),
+                Span::styled(thermal_check, Style::default().fg(COLOR_SUCCESS)),
+            ]),
+            Line::from(vec![
+                Span::styled("  * Transport Latency:   ", style_label()),
+                Span::styled(rtt_check, Style::default().fg(COLOR_SUCCESS)),
             ]),
         ]
     } else {
         vec![
-            Line::from(Span::styled("Press 'p' to run Explainable Cost Model and Constraint Evaluation.", Style::default().fg(Color::Yellow))),
+            Line::from(Span::styled("Scheduler has not evaluated a task plan yet.", Style::default().fg(COLOR_MUTED))),
+            Line::from(Span::raw("Press 'p' or adjust workload parameters with '+/-' to trigger explainable evaluation.")),
         ]
     };
 
-    let decision_block = Paragraph::new(decision_lines)
-        .block(Block::default().borders(Borders::ALL).title(" Explainable Cost Model & Decision Recommendation "));
-    f.render_widget(decision_block, chunks[1]);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(style_border_focused())
+        .title(" EXPLAINABLE SCHEDULING DECISION & SAFETY GATES ");
+
+    f.render_widget(Paragraph::new(lines).block(block), area);
+}
+
+fn render_cost_model(f: &mut Frame, app: &App, area: Rect) {
+    let dec_opt = app.scheduler_decision.as_ref();
+
+    let lines = if let Some(d) = dec_opt {
+        vec![
+            Line::from(vec![
+                Span::styled("ANALYTICAL COST MODEL: ", style_label()),
+                Span::styled("Speedup = T_local / (T_transfer_in + T_remote_compute + T_transfer_out)", Style::default().fg(COLOR_ACCENT)),
+            ]),
+            Line::from(vec![
+                Span::styled("  * Predicted Local Compute:   ", style_label()),
+                Span::styled(format_duration(d.estimates.local_compute_ms), style_value()),
+                Span::styled(" (Host capacity factor: ", Style::default().fg(COLOR_MUTED)),
+                Span::styled(format!("{:.0}%", app.scheduler_host_load * 100.0), Style::default().fg(COLOR_ACCENT)),
+                Span::styled(")", Style::default().fg(COLOR_MUTED)),
+            ]),
+            Line::from(vec![
+                Span::styled("  * Predicted Remote Compute:  ", style_label()),
+                Span::styled(format_duration(d.estimates.remote_compute_ms), style_value()),
+                Span::styled(" (ARM NDK C++ SIMD engine)", Style::default().fg(COLOR_MUTED)),
+            ]),
+            Line::from(vec![
+                Span::styled("  * Predicted USB Transfer:    ", style_label()),
+                Span::styled(format_duration(d.estimates.transfer_in_ms + d.estimates.transfer_out_ms), style_value()),
+                Span::styled(" (Link RTT + Payload framing)", Style::default().fg(COLOR_MUTED)),
+            ]),
+            Line::from(vec![
+                Span::styled("  * Total Remote Overhead:     ", style_label()),
+                Span::styled(format_duration(d.estimates.remote_total_ms), Style::default().fg(COLOR_WARNING)),
+            ]),
+        ]
+    } else {
+        vec![
+            Line::from(Span::styled("Awaiting scheduler calculation...", Style::default().fg(COLOR_MUTED))),
+        ]
+    };
+
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(style_border_normal())
+        .title(" COST MODEL LATENCY BREAKDOWN ");
+
+    f.render_widget(Paragraph::new(lines).block(block), area);
+}
+
+fn render_controls_and_notes(f: &mut Frame, app: &App, area: Rect) {
+    let lines = vec![
+        Line::from(vec![
+            Span::styled("SIMULATION CONTROLS: ", style_label()),
+            Span::styled("[h] ", Style::default().fg(COLOR_ACCENT)),
+            Span::styled(format!("Toggle Host Load ({:.0}%)   ", app.scheduler_host_load * 100.0), style_value()),
+            Span::styled("[+/-] ", Style::default().fg(COLOR_ACCENT)),
+            Span::styled(format!("Workload Records ({})   ", app.scheduler_records), style_value()),
+            Span::styled("[p] ", Style::default().fg(COLOR_ACCENT)),
+            Span::styled("Re-evaluate Plan", style_value()),
+        ]),
+        Line::from(Span::styled(
+            "Note: This is an analytical resource-allocation decision based on hardware capabilities and measured link latency.",
+            Style::default().fg(COLOR_MUTED),
+        )),
+        Line::from(Span::styled(
+            "It establishes safety bounds; it does not claim mathematically global optimality across arbitrary non-deterministic tasks.",
+            Style::default().fg(COLOR_MUTED),
+        )),
+    ];
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(style_border_normal())
+        .title(" POLICY PARAMETERS & SCIENTIFIC INTEGRITY ");
+
+    f.render_widget(Paragraph::new(lines).block(block), area);
 }

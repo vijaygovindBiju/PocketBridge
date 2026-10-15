@@ -14,18 +14,17 @@ pub async fn run(
     seed: u64,
     base_port: u16,
 ) -> Result<()> {
-    let registry = AdapterRegistry::default();
+    let registry = AdapterRegistry::with_all_standard();
     let normalized = adapter_name.to_lowercase();
     let adapter_id = match normalized.as_str() {
         "chunk_transform" | "chunk" | "chunk_transform.v1" => "chunk_transform.v1",
-        "image_batch" | "image" | "image_batch.v1" => "image_batch.v1",
-        "data_analytics" | "analytics" | "data_analytics.v1" => "data_analytics.v1",
-        "phone_cluster" | "cluster" | "phone-cluster" | "phone_cluster.v1" => "phone_cluster.v1",
+        "image_batch" | "image" | "image-batch" | "image_batch.v1" => "image_batch.v1",
+        "data_analytics" | "analytics" | "data-analytics" | "data_analytics.v1" => "data_analytics.v1",
         other => {
             if registry.get(other).is_some() {
                 other
             } else {
-                anyhow::bail!("Unknown workload adapter '{}'. Available: chunk_transform, image_batch, data_analytics, phone_cluster", adapter_name);
+                anyhow::bail!("Unknown workload adapter '{}'. Available: chunk_transform, image_batch, data_analytics", adapter_name);
             }
         }
     };
@@ -33,15 +32,9 @@ pub async fn run(
     let adapter = match registry.get(adapter_id) {
         Some(a) => a,
         None => {
-            let plugin_hint = match adapter_id {
-                "image_batch.v1" => "image-batch",
-                "data_analytics.v1" => "data-analytics",
-                "phone_cluster.v1" => "phone-cluster",
-                other => other,
-            };
             anyhow::bail!(
-                "Workload adapter '{}' is not installed in the core engine.\nTo install it as a plugin, run: pocketbridge plugin install {}",
-                adapter_id, plugin_hint
+                "Workload adapter '{}' is not registered in the core engine.",
+                adapter_id
             );
         }
     };
@@ -70,7 +63,7 @@ pub async fn run(
     println!("--------------------------------------------------------------------------");
 
     // 2. Prepare Work Chunks
-    let chunk_size = (records as usize + chunks_count - 1) / chunks_count;
+    let chunk_size = (records as usize).div_ceil(chunks_count);
     let queue = Arc::new(Mutex::new(FleetWorkQueue::new()));
 
     {

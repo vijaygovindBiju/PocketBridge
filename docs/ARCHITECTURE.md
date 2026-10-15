@@ -4,7 +4,7 @@
 
 PocketBridge establishes an asymmetric co-processing architecture between an Arch Linux host (laptop) and an attached Android phone (worker). The host maintains policy, scheduling, and job state, while the mobile worker advertises hardware capabilities, enforces thermal/power safety gates, and executes supported workload slices via native NDK kernels or dynamically loaded plugin engines.
 
-Communication is strictly wired over a physical USB-C cable (`127.0.0.1:9876` via ADB port forwarding), ensuring zero Wi-Fi attack surface, sub-millisecond round-trip latency (~0.18 ms), and high payload transfer bandwidth (> 125 MB/s).
+Communication is strictly wired over a physical USB-C cable (`127.0.0.1:9876` via ADB port forwarding), ensuring zero Wi-Fi attack surface, measured empirical round-trip latency (~86 ms RTT over ADB userspace port forwarding), and empirical sustained payload throughput of ~370 Mbps (~46 MB/s) over USB 3.0.
 
 ```mermaid
 flowchart TB
@@ -82,7 +82,7 @@ Before executing any job, the scheduler evaluates:
    - **Battery Gate:** Phone battery level $> 15\%$ or actively charging over USB.
    - **Thermal Gate:** Thermal status must be `normal` or `light`. Throttles at `moderate`, rejects at `severe` or `critical`.
    - **Memory Headroom:** Checks worker free RAM against estimated job memory requirement.
-   - **Link Latency:** Rejects if measured link RTT exceeds 50 ms.
+   - **Link Latency:** Rejects if measured link RTT exceeds configured threshold (default 250 ms).
 
 ### 2.3 Dynamic Capability-Based Co-Processing
 When `--hybrid` is enabled, [`PartitionConfig::from_device_profiles`](file:///media/pirate/Shared/currently%20working/PocketBridge/host/pocketbridge-core/src/coprocessor/partition.rs) auto-calibrates workload allocation:

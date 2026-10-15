@@ -179,4 +179,99 @@ impl AdbTransport {
         }
         None
     }
+
+    /// Query detailed memory info from /proc/meminfo over ADB
+    pub async fn query_meminfo(&self) -> Result<DeviceMemoryInfo, PocketBridgeError> {
+        let output = Command::new("adb")
+            .args(["shell", "cat /proc/meminfo"])
+            .output()
+            .await
+            .map_err(|e| PocketBridgeError::AdbError(format!("Failed to query /proc/meminfo: {e}")))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(PocketBridgeError::AdbError(format!("cat /proc/meminfo failed: {stderr}")));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let mut total = 0u64;
+        let mut avail = 0u64;
+        let mut swap_total = 0u64;
+        let mut swap_free = 0u64;
+
+        for line in stdout.lines() {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 2 {
+                if parts[0] == "MemTotal:" {
+                    total = parts[1].parse::<u64>().unwrap_or(0) * 1024;
+                } else if parts[0] == "MemAvailable:" {
+                    avail = parts[1].parse::<u64>().unwrap_or(0) * 1024;
+                } else if parts[0] == "SwapTotal:" {
+                    swap_total = parts[1].parse::<u64>().unwrap_or(0) * 1024;
+                } else if parts[0] == "SwapFree:" {
+                    swap_free = parts[1].parse::<u64>().unwrap_or(0) * 1024;
+                }
+            }
+        }
+
+        Ok(DeviceMemoryInfo {
+            total_bytes: total,
+            available_bytes: avail,
+            swap_total_bytes: swap_total,
+            swap_free_bytes: swap_free,
+        })
+    }
+
+    /// Query battery level, battery temperature (in Celsius), and charging state from dumpsys battery over ADB
+    pub async fn query_battery(&self) -> Result<(u32, f32, bool), PocketBridgeError> {
+        let output = Command::new("adb")
+            .args(["shell", "dumpsys battery"])
+            .output()
+            .await
+            .map_err(|e| PocketBridgeError::AdbError(format!("Failed to query dumpsys battery: {e}")))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(PocketBridgeError::AdbError(format!("dumpsys battery failed: {stderr}")));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let mut level = 100u32;
+        let mut temp_c = 25.0f32;
+        let mut charging = false;
+
+        for line in stdout.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("level:") {
+                let parts: Vec<&str> = trimmed.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    level = parts[1].parse().unwrap_or(100);
+                }
+            } else if trimmed.starts_with("temperature:") {
+                let parts: Vec<&str> = trimmed.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    let raw_temp: f32 = parts[1].parse().unwrap_or(250.0);
+                    temp_c = raw_temp / 10.0;
+                }
+            } else if trimmed.starts_with("status:") {
+                // Status 2 is BATTERY_STATUS_CHARGING, status 5 is BATTERY_STATUS_FULL
+                let parts: Vec<&str> = trimmed.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    let s: u32 = parts[1].parse().unwrap_or(0);
+                    charging = s == 2 || s == 5;
+                }
+            }
+        }
+
+        Ok((level, temp_c, charging))
+    }
+}
+
+/// Physical memory characteristics read from /proc/meminfo on device
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DeviceMemoryInfo {
+    pub total_bytes: u64,
+    pub available_bytes: u64,
+    pub swap_total_bytes: u64,
+    pub swap_free_bytes: u64,
 }

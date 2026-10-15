@@ -8,20 +8,28 @@ use tempfile::tempdir;
 #[test]
 fn test_plugin_catalog_discovery() {
     let catalog = default_catalog();
-    assert!(catalog.len() >= 5);
+    assert_eq!(catalog.len(), 2);
 
-    // Verify presence of decoupled standard plugins and hub plugins
+    // Verify presence of verified native plugins
     let image_plugin = find_catalog_plugin("image-batch");
     assert!(image_plugin.is_some());
-    assert_eq!(image_plugin.unwrap().adapter_id, "image_batch.v1");
+    assert_eq!(image_plugin.as_ref().unwrap().adapter_id, "image_batch.v1");
+    assert_eq!(image_plugin.unwrap().capability_status, pocketbridge_core::CapabilityStatus::HardwareTested);
 
     let analytics_plugin = find_catalog_plugin("data-analytics");
     assert!(analytics_plugin.is_some());
-    assert_eq!(analytics_plugin.unwrap().adapter_id, "data_analytics.v1");
+    assert_eq!(analytics_plugin.as_ref().unwrap().adapter_id, "data_analytics.v1");
+    assert_eq!(analytics_plugin.unwrap().capability_status, pocketbridge_core::CapabilityStatus::HardwareTested);
 
-    let whisper_plugin = find_catalog_plugin("ai-whisper");
-    assert!(whisper_plugin.is_some());
-    assert_eq!(whisper_plugin.unwrap().kind, PluginKind::AiModel);
+    // Unbacked plugins are removed from production catalog
+    assert!(find_catalog_plugin("ai-whisper").is_none());
+    assert!(find_catalog_plugin("llm-llama").is_none());
+
+    // But discoverable in planned roadmap catalog
+    let whisper_planned = pocketbridge_core::find_planned_plugin("ai-whisper");
+    assert!(whisper_planned.is_some());
+    assert_eq!(whisper_planned.as_ref().unwrap().kind, PluginKind::AiModel);
+    assert_eq!(whisper_planned.unwrap().capability_status, pocketbridge_core::CapabilityStatus::Planned);
 }
 
 #[test]
@@ -38,6 +46,7 @@ fn test_plugin_preflight_ram_and_storage_gates() {
         license: "Apache-2.0".to_string(),
         kind: PluginKind::AiModel,
         adapter_id: "heavy_ai.v1".to_string(),
+        capability_status: pocketbridge_core::CapabilityStatus::Experimental,
         requirements: PluginRequirements {
             min_host_ram_mb: 8192,
             min_worker_ram_mb: 4096,

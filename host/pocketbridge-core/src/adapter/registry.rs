@@ -57,7 +57,9 @@ impl AdapterRegistry {
     pub fn load_from_manager(&mut self, manager: &PluginManager) {
         for manifest in manager.list_installed() {
             let dynamic = Arc::new(DynamicPluginAdapter::new(manifest));
-            self.register(dynamic);
+            if dynamic.is_executable() {
+                self.register(dynamic);
+            }
         }
     }
 

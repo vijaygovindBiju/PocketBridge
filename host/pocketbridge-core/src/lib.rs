@@ -12,10 +12,16 @@ pub mod plugin;
 pub mod scheduler;
 pub mod transport;
 pub mod universal;
+pub mod llm;
 
 pub use plugin::{
-    default_catalog, find_catalog_plugin, DynamicPluginAdapter, PluginKind, PluginManifest,
-    PluginManager, PluginRequirements,
+    default_catalog, find_catalog_plugin, find_planned_plugin, planned_catalog, CapabilityStatus,
+    DynamicPluginAdapter, PluginKind, PluginManifest, PluginManager, PluginRequirements,
+};
+
+pub use llm::{
+    resolve_model_path, ActivationFrame, DistributedLayerPlan, DistributedTokenResult, GgmlType,
+    GgufModel, GgufTensorInfo, GgufValue, LayerFootprint, GGUF_MAGIC,
 };
 
 pub use ai::{
@@ -60,4 +66,4 @@ pub use scheduler::{
     ConstraintEvaluation, CostEstimate, CostModel, ExecutionTarget, PerformanceBaseline,
     PolicyEngine, Scheduler, SchedulerConfig, SchedulingDecision,
 };
-pub use transport::{AdbTransport, DEFAULT_PORT};
+pub use transport::{AdbTransport, DeviceMemoryInfo, DEFAULT_PORT};

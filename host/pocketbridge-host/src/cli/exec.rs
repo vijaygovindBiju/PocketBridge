@@ -1,10 +1,9 @@
 use std::process::Stdio;
 use anyhow::{Context, Result};
 use pocketbridge_core::{
-    AdbTransport, AgentRole, Envelope, PartitionConfig, PartitionStrategy,
-    UniversalPartitioner, read_envelope, write_envelope,
+    AdbTransport, PartitionConfig, PartitionStrategy,
 };
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 
 pub async fn run(
@@ -113,70 +112,12 @@ pub async fn run(
         return Ok(());
     }
 
-    // 3. Sliced Parallel Execution (Laptop + Phone)
-    println!(">> Slicing input via {:?} strategy ({:.1}% Host / {:.1}% Phone)...", strategy, calculated_ratio * 100.0, (1.0 - calculated_ratio) * 100.0);
-    let (host_input, worker_input) = UniversalPartitioner::partition_lines(&raw_input, calculated_ratio);
-
-    println!("   Host Slice:   {} lines", host_input.lines().count());
-    println!("   Worker Slice: {} lines", worker_input.lines().count());
-
-    // Connect to phone worker service
-    transport.setup_forwarding().await.context("Failed setting up ADB forward")?;
-    let mut worker_stream = transport.connect_tcp().await.context("Failed connecting to worker")?;
-
-    let hello = Envelope::hello("pocketbridge-exec", "1.1.0", AgentRole::Host);
-    write_envelope(&mut worker_stream, &hello).await?;
-    let _ = read_envelope(&mut worker_stream).await?;
-
-    println!(">> Launching concurrent parallel execution across Laptop and Phone...");
-
-    // Task A: Host local execution
-    let host_task = tokio::spawn({
-        let program = program.to_string();
-        let args: Vec<String> = args.to_vec();
-        async move {
-            let mut child = Command::new(&program)
-                .args(&args)
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::inherit())
-                .spawn()?;
-
-            if let Some(mut stdin) = child.stdin.take() {
-                stdin.write_all(host_input.as_bytes()).await?;
-            }
-
-            let mut stdout = child.stdout.take().unwrap();
-            let mut host_out = String::new();
-            stdout.read_to_string(&mut host_out).await?;
-            child.wait().await?;
-            Ok::<String, anyhow::Error>(host_out)
-        }
-    });
-
-    // Task B: Remote phone execution (Worker transform)
-    let worker_task = tokio::spawn(async move {
-        // Echo / Transform remote slice through worker channel
-        let ping = Envelope::benchmark_echo(1, worker_input.len(), pocketbridge_core::protocol::current_unix_ms());
-        write_envelope(&mut worker_stream, &ping).await?;
-        let _ = read_envelope(&mut worker_stream).await?;
-        Ok::<String, anyhow::Error>(worker_input)
-    });
-
-    let (host_res, worker_res) = tokio::join!(host_task, worker_task);
-    let host_out = host_res??;
-    let worker_out = worker_res??;
-
-    let elapsed = t_start.elapsed().as_secs_f64() * 1000.0;
-
-    println!("\n==========================================================================");
-    println!("Universal Partition Proxy Execution Summary");
-    println!("==========================================================================");
-    println!("  Total Wall-Clock Time: {:.2} ms", elapsed);
-    println!("  Host Processed Lines:  {}", host_out.lines().count());
-    println!("  Phone Processed Lines: {}", worker_out.lines().count());
-    println!("  Total Combined Lines:  {}", host_out.lines().count() + worker_out.lines().count());
-    println!("==========================================================================");
-
-    Ok(())
+    // 3. Remote Execution Safety Gate
+    // Android worker cannot execute arbitrary host Linux ELF binaries.
+    anyhow::bail!(
+        "Remote process execution for arbitrary host binary '{}' is currently Scaffolded.\n\
+         The Android worker cannot execute host Linux ELF binaries directly without an installed adapter module.\n\
+         To run distributed workloads, use an adapter with 'pocketbridge run -a <adapter>' (e.g. chunk_transform, image_batch, data_analytics).",
+        program
+    );
 }

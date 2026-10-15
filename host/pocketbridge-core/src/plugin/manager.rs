@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use sha2::{Digest, Sha256};
 use crate::error::PocketBridgeError;
 use crate::profiler::DeviceProfile;
-use super::catalog::{default_catalog, find_catalog_plugin};
+use super::catalog::{default_catalog, find_catalog_plugin, planned_catalog};
 use super::manifest::PluginManifest;
 
 /// Central manager coordinating plugin discovery, pre-flight checks, and lifecycle.
@@ -61,6 +61,19 @@ impl PluginManager {
         let installed_ids: Vec<String> = self.list_installed().into_iter().map(|p| p.id).collect();
         default_catalog()
             .into_iter()
+            .map(|manifest| {
+                let is_installed = installed_ids.contains(&manifest.id);
+                (manifest, is_installed)
+            })
+            .collect()
+    }
+
+    /// List all catalog plugins plus planned roadmap plugins with installed status flag.
+    pub fn list_all_catalog_and_planned(&self) -> Vec<(PluginManifest, bool)> {
+        let installed_ids: Vec<String> = self.list_installed().into_iter().map(|p| p.id).collect();
+        let mut all = default_catalog();
+        all.extend(planned_catalog());
+        all.into_iter()
             .map(|manifest| {
                 let is_installed = installed_ids.contains(&manifest.id);
                 (manifest, is_installed)
@@ -127,6 +140,13 @@ impl PluginManager {
         manifest: &PluginManifest,
         payload_data: Option<&[u8]>,
     ) -> Result<PathBuf, PocketBridgeError> {
+        if manifest.capability_status == super::manifest::CapabilityStatus::Planned {
+            return Err(PocketBridgeError::PluginError(format!(
+                "Cannot install planned plugin '{}': no executable native package exists yet.",
+                manifest.name
+            )));
+        }
+
         let plugin_dir = self.plugins_dir.join(&manifest.id);
         fs::create_dir_all(&plugin_dir)
             .map_err(|e| PocketBridgeError::PluginError(format!("Failed to create plugin dir: {e}")))?;
@@ -255,7 +275,7 @@ impl PluginManager {
             }
             _ => {
                 // Phone may not be connected via ADB at this instant, installation remains active on host
-                Ok(format!("Installed locally on host (worker sync queued when phone connects)"))
+                Ok("Installed locally on host (worker sync queued when phone connects)".to_string())
             }
         }
     }

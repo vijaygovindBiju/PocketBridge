@@ -2,6 +2,7 @@ pub mod bench;
 pub mod connect;
 pub mod exec;
 pub mod fleet;
+pub mod model;
 pub mod plan;
 pub mod plugin;
 pub mod profile;
@@ -142,6 +143,11 @@ pub enum Commands {
         #[command(subcommand)]
         action: plugin::PluginCommands,
     },
+    /// Inspect and plan distributed neural network layers across host and worker devices
+    Model {
+        #[command(subcommand)]
+        action: model::ModelCommands,
+    },
 }
 
 pub async fn handle_command(cmd: Commands) -> Result<()> {
@@ -203,5 +209,16 @@ pub async fn handle_command(cmd: Commands) -> Result<()> {
             command,
         } => exec::run(&command, &strategy, host_ratio, input_file.as_deref(), port).await,
         Commands::Plugin { action } => plugin::execute(action).await,
+        Commands::Model { action } => match action {
+            model::ModelCommands::Inspect { model } => model::inspect(&model),
+            model::ModelCommands::Plan {
+                model,
+                host_ram_gb,
+                worker_ram_gb,
+            } => model::plan(&model, host_ram_gb, worker_ram_gb),
+            model::ModelCommands::Preflight { model, offline, port } => {
+                model::preflight(&model, offline, port).await
+            }
+        },
     }
 }

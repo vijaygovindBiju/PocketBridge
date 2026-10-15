@@ -30,10 +30,10 @@ pub async fn run(
     let mut worker_profile: Option<DeviceProfile> = None;
     let mut rtt_ms: Option<f64> = None;
 
-    if let Ok(_) = transport.check_device().await {
+    if transport.check_device().await.is_ok() {
         if let Ok(props) = transport.query_getprop().await {
             let mut profile = build_worker_profile_from_props(&props);
-            if let Ok(_) = transport.setup_forwarding().await {
+            if transport.setup_forwarding().await.is_ok() {
                 if let Ok(mut stream) = transport.connect_tcp().await {
                     let hello = Envelope::hello("pocketbridge-plan", "0.1.0", AgentRole::Host);
                     let _ = write_envelope(&mut stream, &hello).await;

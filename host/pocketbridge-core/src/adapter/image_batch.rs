@@ -95,7 +95,7 @@ pub fn execute_image_batch(params: &ImageBatchParams) -> (String, usize) {
         .map(|n| n.get())
         .unwrap_or(4);
 
-    let images_per_thread = ((params.image_count as usize) + num_threads - 1) / num_threads;
+    let images_per_thread = (params.image_count as usize).div_ceil(num_threads);
     let mut thread_buffers = vec![Vec::new(); num_threads];
 
     std::thread::scope(|s| {

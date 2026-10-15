@@ -32,12 +32,12 @@ pub fn execute_chunk_transform(params: &ChunkTransformParams) -> TransformOutput
         let mut hasher = Sha256::new();
         for i in 0..params.record_count {
             let val = transform_record(i as u64, params.seed, params.rounds);
-            hasher.update(&val.to_be_bytes());
+            hasher.update(val.to_be_bytes());
         }
         format!("{:x}", hasher.finalize())
     } else {
         // Full multi-core parallel execution across all host threads
-        let chunk_size = ((params.record_count as usize) + num_threads - 1) / num_threads;
+        let chunk_size = (params.record_count as usize).div_ceil(num_threads);
         let mut chunk_results = vec![Vec::new(); num_threads];
 
         std::thread::scope(|s| {

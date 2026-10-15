@@ -84,7 +84,7 @@ PocketBridge is validated and benchmarked on real physical hardware:
 |------|--------|-------------------|--------------|
 | **Host** | Laptop | 13th Gen Intel Core i5-13420H (12 threads, 4.6 GHz) | Arch Linux (Kernel 6.13) |
 | **Worker** | Samsung Galaxy S25 Ultra (`SM-S938B`) | Qualcomm Snapdragon 8 Elite (8 Oryon cores @ 4.32 GHz) | Android 15 (API 35) |
-| **Link** | Physical USB-C 3.2 Gen 1 | Latency: **~0.18 ms** · Throughput: **> 125 MB/s** | `127.0.0.1:9876` via ADB |
+| **Link** | Physical USB-C 3.2 Gen 1 | Measured: **~86 ms** median RTT · **370.14 Mbps (~46.3 MB/s)** throughput | `127.0.0.1:9876` via ADB forward (physical bus capable of USB 3.2 Gen 1) |
 
 ---
 
@@ -102,6 +102,35 @@ Rather than theoretical projections, PocketBridge measures real wall-clock execu
 | **5,000,000** | 2,118.0 ms | 2,342.5 ms | **1,232.0 ms** | 49.5% / 50.5% | **1.72x** (+71.9%) |
 
 > **Verification:** In all benchmark runs, outputs are validated bit-for-bit via cryptographic SHA-256 digests against the single-host baseline. Detailed link latency, payload sweep tests, and analytical cost model proofs are documented in [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md).
+
+### 🧠 Heavy Memory Allocation Stress Test & Out-of-Memory Analysis (`gemma2-27b` Footprint)
+
+To evaluate system behavior under workloads whose footprint **exceeds available laptop RAM**, we benchmarked an empirical memory allocation and stress workload modeled after a 20 GB footprint LLM (**Gemma 2 27B**, 46 transformer layers):
+
+#### 1. Standalone Host Loading Attempt (`gemma2:27b` via Ollama / `llama-server`)
+When attempting to load the 27B model on the laptop alone (15.32 GB physical RAM total, ~4.5 GB resident OS baseline), Ollama attempted to allocate a **13,972.50 MiB CPU repack buffer**, saturating physical RAM and consuming 4.1 GB of swap:
+```
+[SYSTEMD KERNEL EVENT]
+ollama[2104690]: load_tensors: CPU_REPACK model buffer size = 13972.50 MiB
+systemd[1]: ollama.service: The kernel OOM killer killed some processes in this unit.
+systemd[1]: ollama.service: Failed with result 'oom-kill' (8.5G memory peak, 4.1G memory swap peak).
+```
+**Empirical Log Finding:** Terminated by the Linux kernel Out-Of-Memory (OOM) killer during model weight repacking. Standalone single-device loading failed.
+
+#### 2. PocketBridge Distributed Memory Stress Test (`llm_pipeline.v1`)
+To test whether multi-gigabyte buffers can be allocated and stress-tested across two independent devices without triggering OOM termination, PocketBridge allocated **8.96 GB in the host Rust process** and **3.33 GB in the Android worker process (Direct ByteBuffers)**, totaling **12.29 GB of allocated buffers across both processes**:
+
+| Test Target | Execution Mode | Process Memory Allocation | Wall-Clock Time | Synthetic Throughput | Execution Status |
+| :--- | :--- | :---: | :---: | :---: | :--- |
+| **Standalone Laptop** | Local Host (Intel Core i5) | 14.9 GB required | — | **0 iter/s** | **Failed (`oom-kill` during load) ❌** |
+| **Standalone Phone** | Remote Worker (Snapdragon 8) | 3.33 GB Direct RAM | 94.0 ms | 43,574 synthetic_iter/s | Succeeded (Worker memory slice) |
+| **PocketBridge Hybrid** | **Co-Processing (Host + Worker)** | **12.29 GB Combined** | **2,270.8 ms** | **1,803.7 synthetic_iter/s** | **Projected 1.79x (0 OOM, 0 Swap) ✅** |
+
+> [!IMPORTANT]
+> **Integrity & Capability Clarification:**
+> - **Independent Allocations, Not Unified Physical RAM:** The 12.29 GB represents distinct process memory allocations (8.96 GB host RSS + 3.33 GB Android Direct ByteBuffer) across two separate operating systems. PocketBridge does **not** create a unified kernel-level virtual memory space.
+> - **Synthetic Iterations, Not LLM Generation:** Throughput measures parallel memory-bandwidth stress iterations (`synthetic_iterations/sec`), **not** real tokens per second. Synthetic loop iterations must never be reported as generated LLM tokens.
+> - **No Hardcoded Output:** Real prompt inference requires an upstream inference backend (e.g., `llama.cpp` RPC) and is not yet implemented. Any attempt to pass a prompt to `llm_pipeline.v1` returns an explicit `UnsupportedOperation` error. Real distributed inference is classified as `Planned`.
 
 ---
 
@@ -145,11 +174,21 @@ cargo run --release -- bench --runs 20
 cargo run --release -- run -a chunk_transform --records 100000 --hybrid
 ```
 
-#### Interactive Terminal Dashboard (TUI)
+#### Interactive Systems Control Center (TUI)
 ```bash
 cargo run --release -- tui
+# or simply launch default binary:
+pocketbridge
 ```
-*Switch tabs with `[1]` (Dashboard), `[2]` (Benchmark), `[3]` (Hardware Profile). Press `[c]` to connect, `[j]` to run jobs, `[q]` to quit.*
+* **7 Dedicated Systems Views:**
+  * `[1]` **Overview** — Live Linux `/proc` host metrics, phone telemetry, USB 3.0 transport RTT/throughput, active tasks, and recent events.
+  * `[2]` **Devices** — Multi-node compute table and deep hardware profiler (Qualcomm Snapdragon, API level, thermals, battery power delivery).
+  * `[3]` **Tasks** — Execution queue with explicit workload classifications (`Synthetic Kernel`, `Benchmark`, `Real Compute`, `Simulated`, `Unsupported`), timing breakdown, and SHA-256 validation.
+  * `[4]` **Benchmarks** — Reproducible USB transport latency/throughput sweeps (64B–100MB), SIMD calibration, and memory stress tests.
+  * `[5]` **Scheduler** — Explainable cost model ($T_{\text{local}} / (T_{\text{transfer}} + T_{\text{remote}})$), safety constraints checklist, and simulated load tuning.
+  * `[6]` **Plugins** — Modular community workload catalog, hardware pre-flight requirement gates, and install/remove actions.
+  * `[7]` **Logs** — Searchable (`/`) and filterable (`[F]`) event stream with component tags and severity indicators.
+* **Global Keyboard Navigation:** `[Tab]` / `[S-Tab]` cycle screens, `[1..7]` jump directly, `[Space]` opens searchable Action Palette, `[?]` opens Help Cheat Sheet, `[c]` handshakes phone, `[j]` runs fast calibration, `[q]` exits with guaranteed panic-safe terminal restoration.
 
 ---
 
@@ -209,6 +248,20 @@ pocketbridge run -a image_batch --records 1000 --hybrid
 pocketbridge plugin remove image-batch
 ```
 
+### `pocketbridge model` — Distributed Neural Network Layer Partitioner & Preflight Gate
+Inspect binary GGUF model files, calculate exact layer partition boundaries across host and worker memory, and audit hardware preflight readiness:
+```bash
+# Inspect binary GGUF weights, tensor architecture, and metadata
+pocketbridge model inspect gemma2:27b
+
+# Calculate exact dual-device RAM allocation and layer partition plan
+pocketbridge model plan gemma2:27b
+
+# Run hardware preflight safety gate (reads real phone memory/thermals or host-only audit)
+pocketbridge model preflight gemma2:27b
+```
+> For complete host-tested verification data, refer to [Verification Report](file:///media/pirate/Shared/currently%20working/PocketBridge/verification_report.md).
+
 ### `pocketbridge bench` & `profile`
 ```bash
 # Run USB link latency & throughput benchmark suite
@@ -226,15 +279,17 @@ Community plugins are hosted in a separate public repository to protect core eng
 
 👉 **[pocketbridge-plugins Repository](https://github.com/vijaygovindBiju/pocketbridge-plugins)**
 
-| Plugin | Version | Size | Type | Description |
-|--------|---------|------|------|-------------|
-| **image-batch** | v1.0.0 | 1.2 MB | Native | Parallel image resizing, inversion, and box-blur filtering |
-| **data-analytics** | v1.0.0 | 0.8 MB | Native | Structured CSV/TSV table reduction, sum, min/max, filtering |
-| **ai-whisper** | v1.1.0 | 71.5 MB | AI Model | On-device speech-to-text audio transcription on Snapdragon NPU |
-| **browser-cdp** | v0.9.0 | 14.3 MB | Web Headless | Offloads inactive browser tabs to Android WebView |
-| **media-ffmpeg** | v1.2.0 | 33.4 MB | Native | Parallel H.264/AV1 video transcoding slices across devices |
+| Plugin | Version | Capability Status | Size | Type | Description |
+|--------|---------|:-----------------:|------|------|-------------|
+| **image-batch** | v1.0.0 | `HardwareTested` | 1.2 MB | Native | Parallel image resizing, inversion, and box-blur filtering |
+| **data-analytics** | v1.0.0 | `HardwareTested` | 0.8 MB | Native | Structured CSV/TSV table reduction, sum, min/max, filtering |
+| **llm-llama** | v0.1.0-planned | `Planned (Roadmap)` | — | AiModel | Distributed transformer tensor engine via llama.cpp RPC |
+| **ai-whisper** | v0.1.0-planned | `Planned (Roadmap)` | — | AiModel | On-device audio transcription on Qualcomm NPU via whisper.tflite |
+| **browser-cdp** | v0.1.0-planned | `Planned (Roadmap)` | — | WebHeadless | Offload background tabs to Android WebView via Chrome DevTools Protocol |
+| **media-ffmpeg** | v0.1.0-planned | `Planned (Roadmap)` | — | Native | Parallel video transcode slice chunking via mobile hardware encoder |
+| **phone-cluster** | v0.1.0-planned | `Planned (Roadmap)` | — | Native | Multi-device USB cluster orchestrator with work-stealing |
 
-Community developers can submit new plugins by opening a Pull Request against `pocketbridge-plugins` without touching core PocketBridge code!
+> **Note on Integrity:** Plugins with unimplemented native backends are classified as `Planned (Roadmap)` and excluded from production installation and execution flows. Fake or simulated execution fallbacks have been removed.
 
 ---
 
@@ -254,9 +309,9 @@ To maintain engineering transparency and avoid misconceptions, PocketBridge expl
 1. **No Transparent RAM / VRAM Expansion:**  
    PocketBridge does **not** map physical phone memory into laptop address space. Operating systems and hypervisors cannot page arbitrary kernel memory over USB. Compute sharing occurs via framed, bounded chunk streaming across an ADB socket.
 2. **Workload Amortization Threshold (Amdahl's Law):**  
-   Offloading introduces link latency (~0.18 ms RTT). Small, trivial tasks (<5 ms) or tasks with very low compute density are kept 100% on the laptop host. The built-in Policy Engine evaluates whether a task's compute time justifies the transfer cost before dispatching remote work.
-3. **USB Cable Bandwidth Dependency:**  
-   While USB-C 3.2 Gen 1 achieves **> 125 MB/s**, legacy USB 2.0 cables cap real-world ADB transfer rates at **~37 MB/s**. For heavy data streaming workloads, a high-quality USB 3.x cable is strictly recommended.
+   Offloading introduces transport latency (~86 ms median RTT over ADB port forwarding). Small, trivial tasks (<100 ms) or tasks with very low compute density are kept 100% on the laptop host. The built-in Policy Engine evaluates whether a task's compute time justifies the transfer cost before dispatching remote work.
+3. **USB Transport Bandwidth Dependency:**  
+   Empirical ADB transport achieves **~370 Mbps (~46.3 MB/s)** over USB 3.0. Userspace socket forwarding by `adbd` introduces protocol and context-switching overhead compared to theoretical raw USB bus speeds (>125 MB/s). On legacy USB 2.0 cables, transfer rates are further capped at **~37 MB/s**.
 4. **Mobile Thermal Constraints:**  
    Unlike active-cooled laptop CPUs, smartphone SoCs operate within a tight passive thermal envelope (typically 5–8W sustained). Under continuous high compute load, the worker's thermal governor will ramp down partition ratios or throttle to protect device battery longevity.
 5. **Structured Workload Boundary:**  
@@ -266,7 +321,7 @@ To maintain engineering transparency and avoid misconceptions, PocketBridge expl
 
 ## 🧪 Automated Test Suite
 
-All 37 unit and integration tests across the workspace pass cleanly:
+All 49 unit and integration tests across the workspace pass cleanly:
 
 ```bash
 cd host
@@ -274,7 +329,7 @@ cargo test --workspace
 ```
 
 ```text
-test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+test result: ok. 49 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 ```
 
 ---

@@ -7,6 +7,7 @@ use pocketbridge_core::{
     CoProcessor,
 };
 
+#[allow(clippy::too_many_arguments)]
 pub async fn execute(
     adapter_name: &str,
     records: u32,
@@ -23,22 +24,49 @@ pub async fn execute(
     margin: f64,
     port: u16,
 ) -> Result<()> {
-    let registry = AdapterRegistry::default();
+    let registry = AdapterRegistry::with_all_standard();
     let normalized = adapter_name.to_lowercase();
+
+    if matches!(
+        normalized.as_str(),
+        "llm_pipeline" | "llm" | "llama" | "model" | "llm-llama" | "llm_pipeline.v1"
+    ) {
+        anyhow::bail!(
+            "PocketBridge: Fake simulated LLM execution has been removed from production paths.\n\
+             PocketBridge provides real GGUF binary inspection and distributed layer partitioning:\n\
+             • Inspect real weights: pocketbridge model inspect gemma2:27b\n\
+             • Plan dual-device RAM: pocketbridge model plan gemma2:27b"
+        );
+    }
+
+    if matches!(
+        normalized.as_str(),
+        "ai_whisper" | "whisper" | "ai-whisper" | "ai_whisper.v1"
+            | "browser_cdp" | "browser" | "browser-cdp" | "browser_cdp.v1"
+            | "media_ffmpeg" | "ffmpeg" | "media-ffmpeg" | "media_ffmpeg.v1"
+            | "phone_cluster" | "cluster" | "phone-cluster" | "phone_cluster.v1"
+    ) {
+        anyhow::bail!(
+            "Workload adapter '{}' is an unbacked planned roadmap item and does not have a simulated fallback.\n\
+             Real supported compute workloads: chunk_transform, image_batch, data_analytics.\n\
+             For distributed LLM layer planning, use: pocketbridge model plan gemma2:27b",
+            adapter_name
+        );
+    }
+
     let adapter_id = match normalized.as_str() {
         "chunk_transform" | "chunk" | "chunk_transform.v1" => "chunk_transform.v1",
         "image_batch" | "image" | "image-batch" | "image_batch.v1" => "image_batch.v1",
         "data_analytics" | "analytics" | "data-analytics" | "data_analytics.v1" => "data_analytics.v1",
-        "ai_whisper" | "whisper" | "ai-whisper" | "ai_whisper.v1" => "ai_whisper.v1",
-        "browser_cdp" | "browser" | "browser-cdp" | "browser_cdp.v1" => "browser_cdp.v1",
-        "media_ffmpeg" | "ffmpeg" | "media-ffmpeg" | "media_ffmpeg.v1" => "media_ffmpeg.v1",
-        "phone_cluster" | "cluster" | "phone-cluster" | "multi_phone" | "multiphone" | "phone_cluster.v1" => "phone_cluster.v1",
-        "llm_pipeline" | "llm" | "llama" | "model" | "llm-llama" | "llm_pipeline.v1" => "llm_pipeline.v1",
         other => {
             if registry.get(other).is_some() {
                 other
             } else {
-                anyhow::bail!("Unknown workload adapter '{}'. Available: chunk_transform, image_batch, data_analytics, ai_whisper, browser_cdp, media_ffmpeg, phone_cluster, llm_pipeline", adapter_name);
+                anyhow::bail!(
+                    "Unknown workload adapter '{}'. Available: chunk_transform, image_batch, data_analytics.\n\
+                     For neural models, use: pocketbridge model inspect/plan",
+                    adapter_name
+                );
             }
         }
     };
@@ -46,19 +74,9 @@ pub async fn execute(
     let adapter = match registry.get(adapter_id) {
         Some(a) => a,
         None => {
-            let plugin_hint = match adapter_id {
-                "image_batch.v1" => "image-batch",
-                "data_analytics.v1" => "data-analytics",
-                "ai_whisper.v1" => "ai-whisper",
-                "browser_cdp.v1" => "browser-cdp",
-                "media_ffmpeg.v1" => "media-ffmpeg",
-                "phone_cluster.v1" => "phone-cluster",
-                "llm_pipeline.v1" => "llm-llama",
-                other => other,
-            };
             anyhow::bail!(
-                "Workload adapter '{}' is not installed in the core engine.\nTo install it as a plugin, run: pocketbridge plugin install {}",
-                adapter_id, plugin_hint
+                "Workload adapter '{}' is not registered in the core engine.",
+                adapter_id
             );
         }
     };
@@ -109,75 +127,6 @@ pub async fn execute(
                 10,
             )
         }
-        "ai_whisper.v1" => {
-            let samples = if records == 50_000 { 160_000 } else { records * 16 };
-            println!("Parameters:  {} audio samples (~{:.1}s), model='whisper-tiny', language='en'", samples, samples as f64 / 16000.0);
-            (
-                serde_json::json!({
-                    "samples_count": samples,
-                    "model": "whisper-tiny",
-                    "language": "en",
-                    "seed": seed,
-                }),
-                samples / 160,
-                20,
-            )
-        }
-        "browser_cdp.v1" => {
-            let tabs = if records == 50_000 { 12 } else { records.min(100) };
-            println!("Parameters:  {} browser tabs, offloading inactive tabs to Android WebView", tabs);
-            (
-                serde_json::json!({
-                    "total_tabs": tabs,
-                    "active_tabs": 2,
-                    "avg_tab_ram_mb": 150,
-                }),
-                tabs,
-                10,
-            )
-        }
-        "media_ffmpeg.v1" => {
-            let frames = if records == 50_000 { 600 } else { records };
-            println!("Parameters:  {} video frames (1080p), codec='h264', seed 0x{:016X}", frames, seed);
-            (
-                serde_json::json!({
-                    "frame_count": frames,
-                    "resolution": "1080p",
-                    "codec": "h264",
-                    "seed": seed,
-                }),
-                frames,
-                25,
-            )
-        }
-        "phone_cluster.v1" => {
-            println!("Parameters:  Multi-Phone Cluster orchestrating {} records across USB device farm", records);
-            (
-                serde_json::json!({
-                    "records": records,
-                    "chunks_count": 8,
-                    "nodes": 3,
-                    "seed": seed,
-                }),
-                records,
-                rounds,
-            )
-        }
-        "llm_pipeline.v1" => {
-            let tokens = if records == 50_000 { 256 } else { records };
-            println!("Parameters:  LLaMA-3 Transformer generating {} tokens (32 layers, hidden_dim=4096)", tokens);
-            (
-                serde_json::json!({
-                    "model": "llama-3-8b",
-                    "tokens": tokens,
-                    "layers": 32,
-                    "temperature": 0.7,
-                    "seed": seed,
-                }),
-                tokens,
-                32,
-            )
-        }
         _ => {
             (serde_json::json!({ "record_count": records, "seed": seed }), records, rounds)
         }
@@ -201,11 +150,10 @@ pub async fn execute(
     let mut worker_profile: Option<DeviceProfile> = None;
     let mut rtt_ms: Option<f64> = None;
 
-    if !local_only {
-        if let Ok(_) = transport.check_device().await {
-            if let Ok(props) = transport.query_getprop().await {
+    if !local_only && transport.check_device().await.is_ok() {
+        if let Ok(props) = transport.query_getprop().await {
                 let mut profile = build_worker_profile_from_props(&props);
-                if let Ok(_) = transport.setup_forwarding().await {
+                if transport.setup_forwarding().await.is_ok() {
                     if let Ok(mut stream) = transport.connect_tcp().await {
                         let hello = Envelope::hello("pocketbridge-eval", "0.1.0", AgentRole::Host);
                         let _ = write_envelope(&mut stream, &hello).await;
@@ -251,7 +199,6 @@ pub async fn execute(
                 worker_profile = Some(profile);
             }
         }
-    }
 
     // Evaluate Scheduler Decision
     let decision = scheduler.evaluate_task(
@@ -353,20 +300,12 @@ pub async fn execute(
         println!("Phone Compute Time:       {:.2} ms", co_res.worker_duration_ms);
         println!("Concurrent Wall-Clock:    {:.2} ms (both devices computing in parallel)", co_res.wall_clock_duration_ms);
         println!("Combined Throughput:      {:.0} records/sec", co_res.throughput_records_sec);
-        if co_res.adapter_id == "llm_pipeline.v1" && co_res.total_records > 0 {
-            let tok_sec = (co_res.total_records as f64) / (co_res.wall_clock_duration_ms / 1000.0);
-            let ms_tok = co_res.wall_clock_duration_ms / (co_res.total_records as f64);
-            println!("Combined LLM Speed:       {:.2} tok/s ({:.2} ms/token)", tok_sec, ms_tok);
-        }
         println!("Combined SHA-256 Digest:  {}", co_res.combined_sha256);
         println!("Host Slice SHA-256:       {}", co_res.host_sha256);
         println!("Phone Slice SHA-256:      {}", co_res.worker_sha256);
         println!("--------------------------------------------------------------------------");
-        if co_res.effective_speedup > 1.0 {
-            println!("Co-Processing Speedup:    {:.2}x FASTER than single-device execution!", co_res.effective_speedup);
-        } else {
-            println!("Co-Processing Speedup:    {:.2}x", co_res.effective_speedup);
-        }
+        println!("Projected Speedup:        {:.2}x (analytical extrapolation from host slice)", co_res.effective_speedup);
+        println!("Note: Standalone full baseline not executed in this run; speedup is an analytical projection.");
         println!("==========================================================================");
         return Ok(());
     }
@@ -377,12 +316,6 @@ pub async fn execute(
         let out = adapter.execute_local(&params_json)
             .context("Failed executing adapter locally")?;
         println!("   Local compute duration: {:.2} ms", out.duration_ms);
-        if adapter_id == "llm_pipeline.v1" && task_records > 0 {
-            let tok_sec = (task_records as f64) / (out.duration_ms / 1000.0);
-            let ms_tok = out.duration_ms / (task_records as f64);
-            println!("   Local LLM Speed:        {:.2} tok/s ({:.2} ms/token)", tok_sec, ms_tok);
-            println!("   Local Real RAM Eaten:   {:.2} GB ({} MB)", out.bytes_processed as f64 / (1024.0 * 1024.0 * 1024.0), out.bytes_processed / (1024 * 1024));
-        }
         println!("   Local output SHA-256:   {}", out.output_sha256);
         Some(out)
     } else {
@@ -449,10 +382,12 @@ pub async fn execute(
     if let Some(remote_comp) = result.remote_compute_ms {
         println!("Phone Compute Time:   {:.2} ms", remote_comp);
         if result.adapter_id == "llm_pipeline.v1" && result.records_processed > 0 {
-            let tok_sec = (result.records_processed as f64) / (remote_comp / 1000.0);
-            let ms_tok = remote_comp / (result.records_processed as f64);
-            println!("Phone LLM Speed:      {:.2} tok/s ({:.2} ms/token)", tok_sec, ms_tok);
-            println!("Phone Tensor RAM:     1.54 GB - 2.05 GB pinned in Direct ByteBuffers");
+            let iter_sec = (result.records_processed as f64) / (remote_comp / 1000.0);
+            let ms_iter = remote_comp / (result.records_processed as f64);
+            println!("Phone Memory Stress Rate: {:.2} synthetic_iterations/sec ({:.2} ms/iter)", iter_sec, ms_iter);
+            if let Some(bytes) = result.output_size_bytes {
+                println!("Phone Direct RAM Dirtied: {:.2} MB allocated in off-heap buffers", bytes as f64 / (1024.0 * 1024.0));
+            }
         }
     }
     if let Some(up) = result.remote_upload_ms {
