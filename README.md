@@ -144,15 +144,16 @@ cargo run --release -- tui
 # or simply launch default binary:
 pocketbridge
 ```
-* **7 Dedicated Systems Views:**
+* **8 Dedicated Systems Views:**
   * `[1]` **Overview** — Live Linux `/proc` host metrics, phone telemetry, USB 3.0 transport RTT/throughput, active tasks, and recent events.
   * `[2]` **Devices** — Multi-node compute table and deep hardware profiler (Qualcomm Snapdragon, API level, thermals, battery power delivery).
-  * `[3]` **Tasks** — Execution queue with explicit workload classifications (`Synthetic Kernel`, `Benchmark`, `Real Compute`, `Simulated`, `Unsupported`), timing breakdown, and SHA-256 validation.
-  * `[4]` **Benchmarks** — Reproducible USB transport latency/throughput sweeps (64B–100MB), SIMD calibration, and memory stress tests.
-  * `[5]` **Scheduler** — Explainable cost model ($T_{\text{local}} / (T_{\text{transfer}} + T_{\text{remote}})$), safety constraints checklist, and simulated load tuning.
-  * `[6]` **Plugins** — Modular community workload catalog, hardware pre-flight requirement gates, and install/remove actions.
-  * `[7]` **Logs** — Searchable (`/`) and filterable (`[F]`) event stream with component tags and severity indicators.
-* **Global Keyboard Navigation:** `[Tab]` / `[S-Tab]` cycle screens, `[1..7]` jump directly, `[Space]` opens searchable Action Palette, `[?]` opens Help Cheat Sheet, `[c]` handshakes phone, `[j]` runs fast calibration, `[q]` exits with guaranteed panic-safe terminal restoration.
+  * `[3]` **Inference** — Dedicated distributed LLM inference console: live GGUF parsing, context-size budgeting, hardware preflight audit, real-time token generation streaming, and genuine telemetry (prompt tok/s, generation tok/s, latency, RPC/Host RAM).
+  * `[4]` **Tasks** — Execution queue with explicit workload classifications (`Synthetic Kernel`, `Benchmark`, `Real Compute`, `Real Inference`, `Simulated`, `Unsupported`), timing breakdown, and SHA-256 validation.
+  * `[5]` **Benchmarks** — Reproducible USB transport latency/throughput sweeps (64B–100MB), SIMD calibration, GGUF layer partition analysis, and memory stress tests.
+  * `[6]` **Scheduler** — Explainable cost model ($T_{\text{local}} / (T_{\text{transfer}} + T_{\text{remote}})$), safety constraints checklist, and simulated load tuning.
+  * `[7]` **Plugins** — Modular community workload catalog, hardware pre-flight requirement gates, and install/remove actions.
+  * `[8]` **Logs** — Searchable (`/`) and filterable (`[F]`) event stream with component tags and severity indicators.
+* **Global Keyboard Navigation:** `[Tab]` / `[S-Tab]` cycle screens, `[1..8]` jump directly, `[Space]` opens searchable Action Palette, `[?]` opens Help Cheat Sheet, `[c]` handshakes phone, `[j]` runs fast calibration, `[q]` exits with guaranteed panic-safe terminal restoration.
 
 ---
 
@@ -212,19 +213,37 @@ pocketbridge run -a image_batch --records 1000 --hybrid
 pocketbridge plugin remove image-batch
 ```
 
-### `pocketbridge model` — Distributed Neural Network Layer Partitioner & Preflight Gate
-Inspect binary GGUF model files, calculate exact layer partition boundaries across host and worker memory, and audit hardware preflight readiness:
+### `pocketbridge model` & Distributed Dual-Device LLM Inference
+Inspect binary GGUF model files, calculate exact layer partition boundaries across host and worker memory, audit hardware preflight readiness, and execute distributed split inference:
+
+#### Interactive TUI Inference Console (Screen `[3]`):
+Launch the TUI (`pocketbridge` or `pocketbridge tui`) and switch to screen `[3]` (`Inference`):
+- **Model Presets & Path Editing:** Press `[Enter]` or `[e]` to edit model path or prompt, or press presets `[1]` (Mistral 7B Q4_K_M), `[2]` (Llama 3.2 3B), `[3]` (Llama 3.2 1B).
+- **Context Size Budget:** Press `[+]` / `[-]` to cycle context window size (512, 1024, 2048, 4096, 8192 tokens, default: 2048).
+- **Partition Mode:** Press `[a]` to toggle automatic safe headroom partitioning (Rust Planner) vs manual offload override (`[` / `]` to tune layer count).
+- **Hardware Preflight Audit:** Press `[f]` or `[p]` to verify live phone connectivity via ADB, host `/proc/meminfo`, phone safe headroom buffer (preserving 1.2 GB Android system headroom), and cross-compiled ARM64 RPC binaries.
+- **Run Distributed Inference:** Press `[r]` to execute non-blocking distributed inference across laptop and phone.
+- **Live Telemetry & Token Streaming:** Watch real-time stage progress (`[1/6]` through `[6/6]`), live streaming generated tokens, prompt speed (`tok/s`), generation speed (`tok/s`), total latency, and RPC/Host memory allocation.
+- **Safe Cancellation:** Press `[x]` or `[Esc]` to abort execution at any time; child processes and on-device RPC servers (`pkill -f ggml-rpc-server`) are cleaned up immediately.
+
+#### CLI & Script Execution:
 ```bash
 # Inspect binary GGUF weights, tensor architecture, and metadata
-pocketbridge model inspect gemma2:27b
+pocketbridge model inspect /media/pirate/Shared/models/Llama-3.2-3B-Instruct-Q4_K_M.gguf
 
 # Calculate exact dual-device RAM allocation and layer partition plan
-pocketbridge model plan gemma2:27b
+pocketbridge model plan /media/pirate/Shared/models/Llama-3.2-3B-Instruct-Q4_K_M.gguf
 
 # Run hardware preflight safety gate (reads real phone memory/thermals or host-only audit)
-pocketbridge model preflight gemma2:27b
+pocketbridge model preflight /media/pirate/Shared/models/Llama-3.2-3B-Instruct-Q4_K_M.gguf
+
+# Execute real physical dual-device split inference (layer division auto-detected dynamically):
+./scripts/deploy_and_run.sh --run "Explain why distributed computing between a laptop and mobile phone is challenging. Provide a direct 2-sentence response."
+
+# Or explicitly specify model, context size, and manual layer offload:
+./scripts/deploy_and_run.sh --run 14 -c 2048 -m /media/pirate/Shared/models/Llama-3.2-3B-Instruct-Q4_K_M.gguf "Explain why distributed computing between a laptop and mobile phone is challenging. Provide a direct 2-sentence response."
 ```
-> For complete host-tested verification data, refer to [Verification Report](file:///media/pirate/Shared/currently%20working/PocketBridge/verification_report.md).
+> For complete hardware-verified benchmark telemetry, mathematical feasibility proofs, and fresh reproducibility audits, refer to [Verification Report](verification_report.md), [3B Verification Audit](AUDIT_REPORT_3B.md), and [Phases Roadmap](PHASES.md).
 
 ### `pocketbridge bench` & `profile`
 ```bash
@@ -285,15 +304,14 @@ To maintain engineering transparency and avoid misconceptions, PocketBridge expl
 
 ## 🧪 Automated Test Suite
 
-All 49 unit and integration tests across the workspace pass cleanly:
+All 150 unit and integration tests across 20 test binaries pass cleanly:
 
 ```bash
-cd host
-cargo test --workspace
+cargo test --workspace --manifest-path host/Cargo.toml
 ```
 
 ```text
-test result: ok. 49 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+test result: ok. 150 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 ```
 
 ---
